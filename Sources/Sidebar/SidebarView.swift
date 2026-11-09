@@ -10,8 +10,9 @@ struct FrameView: View {
   /// Chrome's window corner on macOS 26, measured from its window shape:
   /// a continuous corner, 23 pt along each edge.
   nonisolated static let chromeCornerRadius: CGFloat = 22.5
-  /// Concentric with Chrome's corner across the 8 pt border.
-  nonisolated static let outerCornerRadius: CGFloat = 30.5
+  /// The frame's own corners. Arc keeps these tighter than the content's
+  /// corners; a fully concentric 30.5 pt looked too round.
+  nonisolated static let outerCornerRadius: CGFloat = 16
 
   var body: some View {
     ZStack(alignment: .topLeading) {
