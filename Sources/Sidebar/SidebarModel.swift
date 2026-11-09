@@ -99,12 +99,15 @@ final class SidebarModel {
 
   /// Re-reads the Bookmarks file only when Chrome has changed it.
   func refreshBookmarks() {
-    let file = profileDirectory.appending(path: "Bookmarks")
-    let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    let files = ChromeBookmarks.fileNames.map { profileDirectory.appending(path: $0) }
+      .filter { FileManager.default.fileExists(atPath: $0.path) }
+    let modified = files
+      .compactMap { (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate }
+      .max()
     guard modified != bookmarksModified else { return }
     bookmarksModified = modified
     do {
-      bookmarks = try ChromeBookmarks.parse(Data(contentsOf: file))
+      bookmarks = try ChromeBookmarks.parse(files.map { try Data(contentsOf: $0) })
     } catch {
       log.error("Bookmarks read failed: \(String(describing: error), privacy: .public)")
     }

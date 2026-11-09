@@ -335,3 +335,38 @@ import Testing
     #expect(window.height > 1000)
   }
 }
+
+@Suite struct BookmarkMerging {
+  func file(bar: [String], other: [String] = []) -> Data {
+    func links(_ names: [String]) -> String {
+      names.map { #"{"id": "\#($0)", "name": "\#($0)", "type": "url", "url": "https://\#($0).com"}"# }
+        .joined(separator: ",")
+    }
+    return Data("""
+      {"roots": {
+        "bookmark_bar": {"id": "1", "name": "Bar", "type": "folder", "children": [\(links(bar))]},
+        "other": {"id": "2", "name": "Other bookmarks", "type": "folder", "children": [\(links(other))]}
+      }}
+      """.utf8)
+  }
+
+  @Test func `account bookmarks come first, then local ones, with one Other folder`() throws {
+    let account = file(bar: ["Claude", "VG"], other: ["a"])
+    let local = file(bar: ["local"], other: ["b"])
+    let nodes = try ChromeBookmarks.parse([account, local])
+    #expect(nodes.map(\.title) == ["Claude", "VG", "local", "Other bookmarks"])
+    #expect(nodes.last?.children.map(\.title) == ["a", "b"])
+  }
+
+  @Test func `an empty local file adds nothing`() throws {
+    let nodes = try ChromeBookmarks.parse([file(bar: ["Claude"]), file(bar: [])])
+    #expect(nodes.map(\.title) == ["Claude"])
+  }
+}
+
+extension BookmarkMerging {
+  @Test func `IDs stay unique across files`() throws {
+    let nodes = try ChromeBookmarks.parse([file(bar: ["x"]), file(bar: ["x"])])
+    #expect(Set(nodes.map(\.id)).count == nodes.count)
+  }
+}

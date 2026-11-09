@@ -16,6 +16,10 @@ public struct BookmarkNode: Identifiable, Sendable, Equatable {
     self.children = children
   }
 
+  func prefixingIDs(with prefix: String) -> BookmarkNode {
+    BookmarkNode(id: prefix + id, title: title, url: url, children: children.map { $0.prefixingIDs(with: prefix) })
+  }
+
   /// Every link below this node, depth first.
   public var allLinks: [BookmarkNode] {
     isFolder ? children.flatMap(\.allLinks) : [self]
@@ -45,14 +49,30 @@ public enum ChromeBookmarks {
     }
   }
 
+  /// Files to read in a profile folder, in display order. A signed-in profile
+  /// keeps its synced bookmarks in `AccountBookmarks`; `Bookmarks` holds the
+  /// ones saved only on this Mac. Both use the same JSON format.
+  public static let fileNames = ["AccountBookmarks", "Bookmarks"]
+
   /// The bookmarks bar's contents come first, at the top level, the way the bar shows them.
   /// "Other" and "Mobile" follow as folders, and only when they hold something.
   public static func parse(_ data: Data) throws -> [BookmarkNode] {
-    let file = try JSONDecoder().decode(File.self, from: data)
-    var result = file.roots["bookmark_bar"]?.node.children ?? []
+    try parse([data])
+  }
+
+  /// Merges several bookmark files: every file's bar items, then one "Other"
+  /// and one "Mobile" folder holding every file's items.
+  public static func parse(_ files: [Data]) throws -> [BookmarkNode] {
+    // Each file numbers its nodes from 1, so prefix IDs with the file's index.
+    let decoded = try files.enumerated().map { index, data in
+      try JSONDecoder().decode(File.self, from: data).roots.mapValues { $0.node.prefixingIDs(with: "\(index)-") }
+    }
+    var result = decoded.flatMap { $0["bookmark_bar"]?.children ?? [] }
     for key in ["other", "synced"] {
-      if let folder = file.roots[key]?.node, !folder.children.isEmpty {
-        result.append(folder)
+      let folders = decoded.compactMap { $0[key] }
+      let children = folders.flatMap(\.children)
+      if let first = folders.first, !children.isEmpty {
+        result.append(BookmarkNode(id: first.id, title: first.title, url: nil, children: children))
       }
     }
     return result
