@@ -103,33 +103,51 @@ final class ChromeWindowTracker {
   }
 
   /// Moves and resizes the current Chrome window. `frame` is in Cocoa coordinates.
-  func setCurrentWindowFrame(_ frame: CGRect) {
+  ///
+  /// Chrome applies Accessibility frame changes asynchronously, one at a time:
+  /// a size change sent right after a position change runs against the old
+  /// position and drops the move. So change one value, wait until Chrome reports
+  /// it, then change the next. Shrink before moving and move before growing, so
+  /// the window never hangs off the screen (macOS would clamp it).
+  func moveCurrentWindow(to frame: CGRect) async {
     guard let window = currentWindow else { return }
-    let ax = ScreenCoordinates.flip(frame, primaryScreenHeight: Self.primaryScreenHeight)
-    var origin = ax.origin
-    var size = ax.size
-    let setPosition = {
-      if let value = AXValueCreate(.cgPoint, &origin) {
-        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+    let target = ScreenCoordinates.flip(frame, primaryScreenHeight: Self.primaryScreenHeight)
+
+    for _ in 0..<3 {
+      guard let current = frameInAXCoordinates(of: window) else { return }
+      if current.isClose(to: target, within: 1) { return }
+      let shrinking = target.width < current.width - 1 || target.height < current.height - 1
+      if shrinking {
+        await setSize(target.size, of: window)
+        await setPosition(target.origin, of: window)
+      } else {
+        await setPosition(target.origin, of: window)
+        await setSize(target.size, of: window)
       }
-    }
-    let setSize = {
-      if let value = AXValueCreate(.cgSize, &size) {
-        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
-      }
-    }
-    // Shrink before moving and move before growing, so the window never
-    // passes through a frame that hangs off the screen (macOS would push it back).
-    let current = frameInAXCoordinates(of: window)
-    if let current, size.width < current.width || size.height < current.height {
-      setSize()
-      setPosition()
-    } else {
-      setPosition()
-      setSize()
     }
   }
 
+  private func setPosition(_ point: CGPoint, of window: AXUIElement) async {
+    var point = point
+    guard let value = AXValueCreate(.cgPoint, &point) else { return }
+    AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+    await waitUntil { current in abs(current.minX - point.x) <= 1 && abs(current.minY - point.y) <= 1 }
+  }
+
+  private func setSize(_ size: CGSize, of window: AXUIElement) async {
+    var size = size
+    guard let value = AXValueCreate(.cgSize, &size) else { return }
+    AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
+    await waitUntil { current in abs(current.width - size.width) <= 1 && abs(current.height - size.height) <= 1 }
+  }
+
+  /// Polls the current window's frame (AX coordinates) for up to 300 ms.
+  private func waitUntil(_ done: (CGRect) -> Bool) async {
+    for _ in 0..<15 {
+      if let window = currentWindow, let frame = frameInAXCoordinates(of: window), done(frame) { return }
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+  }
 
   // MARK: - Observer
 

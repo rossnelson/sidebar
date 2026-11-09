@@ -1,6 +1,9 @@
 import AppKit
 import Carbon.HIToolbox
+import OSLog
 import SidebarCore
+
+private let layoutLog = Logger(subsystem: "com.ross.sidebar", category: "layout")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   static let sidebarWidth: CGFloat = 260
@@ -26,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// After we move Chrome's window, its move and resize events describe
   /// half-finished frames. Ignore them until this time, then lay out once.
   private var settleUntil = Date.distantPast
-  private var settleTimer: Timer?
+  private var moveTask: Task<Void, Never>?
   private var clickMonitor: Any?
   private var moveMonitors: [Any] = []
   /// Where Chrome's window sits, in screen coordinates.
@@ -68,8 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     tracker.onChange = { [weak self] window in
       guard let self else { return }
       model.updateProfile(windowTitle: window?.title)
-      if Date() < settleUntil, window != nil {
-        chromeWindow = window
+      if Date() < settleUntil {
+        // Mid-move, the window can briefly read as missing or half-sized.
+        if let window { chromeWindow = window }
         return
       }
       layout(window)
@@ -113,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: - Placement
 
   private func layout(_ window: ChromeWindow?) {
+    layoutLog.debug("layout chrome=\(String(describing: window?.frame), privacy: .public) collapsed=\(self.model.isCollapsed)")
     chromeWindow = window
     guard let window else {
       peekPanel.orderOut(nil)
@@ -183,17 +188,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     layout(window)
   }
 
-  /// Moves Chrome's window, then ignores its events briefly and lays out once it has settled.
+  /// Moves Chrome's window step by step, ignoring its events until the move is
+  /// done, then lays out once from where it really ended up.
   private func moveChrome(to frame: CGRect) {
+    layoutLog.debug("moveChrome to \(String(describing: frame), privacy: .public)")
     requestedFrame = frame
-    settleUntil = Date().addingTimeInterval(0.35)
-    tracker.setCurrentWindowFrame(frame)
-    settleTimer?.invalidate()
-    let timer = Timer(timeInterval: 0.4, repeats: false) { [weak self] _ in
-      MainActor.assumeIsolated { self?.tracker.update() }
+    settleUntil = .distantFuture
+    moveTask?.cancel()
+    moveTask = Task { [weak self] in
+      guard let self else { return }
+      await tracker.moveCurrentWindow(to: frame)
+      guard !Task.isCancelled else { return }
+      settleUntil = .distantPast
+      tracker.update()
     }
-    RunLoop.main.add(timer, forMode: .common)
-    settleTimer = timer
   }
 
   private func setPeeking(_ peeking: Bool) {
