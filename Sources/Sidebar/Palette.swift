@@ -83,6 +83,25 @@ final class PaletteController: NSObject, NSWindowDelegate {
     model.chrome.focus()
   }
 
+  /// Closes the palette and replays a Chrome shortcut (⌘W, ⌘⇧T, ⌘1 …) in Chrome.
+  private func forwardToChrome(_ event: NSEvent) {
+    let keyCode = CGKeyCode(event.keyCode)
+    let flags = event.cgEvent?.flags ?? []
+    close()
+    guard let pid = NSRunningApplication
+      .runningApplications(withBundleIdentifier: ChromeScripts.bundleID).first?.processIdentifier
+    else { return }
+    Task {
+      // Give Chrome a moment to take keyboard focus back from the palette.
+      try? await Task.sleep(for: .milliseconds(80))
+      for down in [true, false] {
+        let key = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: down)
+        key?.flags = flags
+        key?.postToPid(pid)
+      }
+    }
+  }
+
   private func openSelection() {
     let results = state.results
     guard results.indices.contains(state.selection) else {
@@ -133,6 +152,10 @@ final class PaletteController: NSObject, NSWindowDelegate {
   }
 
   private func handle(_ event: NSEvent) -> Bool {
+    if KeyRouting.forwardsToChrome(keyCode: event.keyCode, modifiers: event.routingModifiers) {
+      forwardToChrome(event)
+      return true
+    }
     let control = event.modifierFlags.contains(.control)
     switch (event.keyCode, control) {
     case (125, _), (45, true): state.move(1)  // ↓, ⌃N
@@ -288,5 +311,16 @@ private struct Hint: View {
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
       Text(label).font(.caption).foregroundStyle(.secondary)
     }
+  }
+}
+
+extension NSEvent {
+  var routingModifiers: KeyRouting.Modifiers {
+    var result: KeyRouting.Modifiers = []
+    if modifierFlags.contains(.command) { result.insert(.command) }
+    if modifierFlags.contains(.shift) { result.insert(.shift) }
+    if modifierFlags.contains(.option) { result.insert(.option) }
+    if modifierFlags.contains(.control) { result.insert(.control) }
+    return result
   }
 }

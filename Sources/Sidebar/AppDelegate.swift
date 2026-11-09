@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// half-finished frames. Ignore them until this time, then lay out once.
   private var settleUntil = Date.distantPast
   private var settleTimer: Timer?
+  private var clickMonitor: Any?
   private var windowFrame: CGRect? { chromeWindow?.frame }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -72,6 +73,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     tracker.start()
 
+    // A click in Chrome brings its window to the front, over our frame, without an
+    // Accessibility event. Put the frame back above it right after each click.
+    clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] _ in
+      MainActor.assumeIsolated { self?.raiseFrameAboveChrome() }
+    }
+
     model.loadFavorites()
     model.refreshTheme()
     model.refreshBookmarks()
@@ -114,15 +121,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.frameHole = layout.holeInFrame
     panel.setFrame(layout.frame, display: true)
     frameRect = layout.frame
-    // Sit directly below Chrome's window: above other apps' windows, never over Chrome.
+    // Sit directly above Chrome's window, so the border covers Chrome's shadow.
+    // The hole is transparent and matches Chrome's corners, so Chrome stays visible
+    // and clickable. Other apps' windows still cover both.
     let wasVisible = panel.isVisible
-    panel.order(.below, relativeTo: window.windowNumber)
+    panel.order(.above, relativeTo: window.windowNumber)
     if !wasVisible { model.refreshTabs() }
   }
 
   private func updateCommandT() {
     let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     commandT?.isEnabled = front == ChromeScripts.bundleID
+  }
+
+  private func raiseFrameAboveChrome() {
+    guard panel.isVisible, let number = chromeWindow?.windowNumber else { return }
+    panel.order(.above, relativeTo: number)
   }
 
   // MARK: - Collapse and peek

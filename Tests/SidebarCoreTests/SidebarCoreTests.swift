@@ -377,3 +377,38 @@ extension Favorites {
     #expect(FavoritesStore.slotCount(for: count) == slots)
   }
 }
+
+private typealias M = KeyRouting.Modifiers
+
+@Suite struct PaletteKeys {
+  typealias K = KeyRouting.Key
+  let cmd = M.command
+
+  @Test(arguments: [
+    (K.w, M.command),
+    (K.t, M([.command, .shift])),
+    (18, M.command),  // ⌘1
+    (25, M.command),  // ⌘9
+    (15, M.command),  // ⌘R
+    (33, M.command),  // ⌘[
+    (K.tab, M.control),
+    (K.tab, M([.control, .shift])),
+    (K.right, M([.command, .option])),
+  ] as [(UInt16, M)])
+  func `Chrome's tab keys pass through`(key: UInt16, modifiers: KeyRouting.Modifiers) {
+    #expect(KeyRouting.forwardsToChrome(keyCode: key, modifiers: modifiers))
+  }
+
+  @Test(arguments: [
+    (K.t, M.command),  // the palette's own ⌘T
+    (K.a, M.command), (K.c, M.command), (K.v, M.command), (K.z, M([.command, .shift])),
+    (K.left, M.command), (K.delete, M.command),
+    (K.q, M.command), (K.h, M.command), (K.m, M.command),
+    (K.a, M.control),  // ⌃A: start of line
+    (45, M.control),  // ⌃N: next result
+    (K.w, M()),  // typing "w"
+  ] as [(UInt16, M)])
+  func `the palette keeps typing, editing and app keys`(key: UInt16, modifiers: KeyRouting.Modifiers) {
+    #expect(!KeyRouting.forwardsToChrome(keyCode: key, modifiers: modifiers))
+  }
+}
