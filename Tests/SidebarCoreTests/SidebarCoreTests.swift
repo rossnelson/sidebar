@@ -194,3 +194,57 @@ import Testing
     }
   }
 }
+
+@Suite struct ProfileThemes {
+  let profiles = [
+    ProfileInfo(directory: "Default", name: "Your Chrome", isUsingDefaultName: true, givenName: "Ross"),
+    ProfileInfo(directory: "Profile 1", name: "Work", isUsingDefaultName: false, givenName: "Ross"),
+    ProfileInfo(directory: "Profile 2", name: "Temporal", isUsingDefaultName: false, givenName: "Ross"),
+  ]
+
+  @Test(arguments: [
+    ("Claude Code - Google Chrome - Ross (Work)", "Profile 1"),
+    ("New Tab - Google Chrome - Ross (Temporal)", "Profile 2"),
+    ("Retro Cable Box - Google Chrome - Ross", "Default"),
+    ("A - Google Chrome - B - Google Chrome - Ross (Work)", "Profile 1"),
+  ])
+  func `finds the profile from the window title`(title: String, directory: String) {
+    #expect(ChromeProfiles.directory(forWindowTitle: title, profiles: profiles) == directory)
+  }
+
+  @Test func `no Chrome marker means unknown`() {
+    #expect(ChromeProfiles.directory(forWindowTitle: "Settings", profiles: profiles) == nil)
+  }
+
+  @Test func `parses Local State profiles`() {
+    let json = #"{"profile": {"info_cache": {"Profile 1": {"name": "Work", "is_using_default_name": false, "gaia_given_name": "Ross"}}}}"#
+    #expect(ChromeProfiles.parse(localState: Data(json.utf8)) == [profiles[1]])
+  }
+
+  @Test func `reads the seed color and scheme`() {
+    let json = #"{"browser": {"theme": {"user_color": -14244198, "color_scheme2": 2}}}"#
+    let theme = ProfileTheme.parse(preferences: Data(json.utf8))
+    #expect(theme.seed == 0x26A69A)
+    #expect(theme.scheme == .dark)
+  }
+
+  @Test func `no theme block is Chrome's default`() {
+    #expect(ProfileTheme.parse(preferences: Data("{}".utf8)) == .standard)
+  }
+
+  @Test(arguments: [0x26A69A, 0x7200FF, 0x8CABE4, 0x000000, 0xFFFFFF] as [UInt32])
+  func `LCh round-trips sRGB`(hex: UInt32) {
+    #expect(LCh(rgb: RGB(hex: hex)).rgb.hex == hex)
+  }
+
+  @Test func `palette keeps the seed hue and the requested lightness`() {
+    let seedHue = LCh(rgb: RGB(hex: 0x26A69A)).h
+    let palette = ThemePalette.make(seed: 0x26A69A, dark: true)
+    let background = LCh(rgb: palette.background)
+    #expect(abs(background.l - 14) < 1)
+    #expect(abs(background.h - seedHue) < 3)
+    #expect(LCh(rgb: palette.text).l > 90)
+    let gray = LCh(rgb: ThemePalette.make(seed: 0x26A69A, dark: true, grayscale: true).background)
+    #expect(gray.c < 1)
+  }
+}

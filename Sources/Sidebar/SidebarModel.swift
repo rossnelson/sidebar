@@ -11,6 +11,8 @@ final class SidebarModel {
   var recents: [HistoryItem] = []
   var query = ""
   var problem: Problem?
+  /// The theme of the profile that owns Chrome's front window.
+  var theme = ProfileTheme.standard
 
   enum Problem: Equatable {
     case automationDenied
@@ -19,6 +21,9 @@ final class SidebarModel {
 
   @ObservationIgnored let chrome = ChromeController()
   @ObservationIgnored private var bookmarksModified: Date?
+  @ObservationIgnored private var themeModified: Date?
+  /// Profile folder of Chrome's front window, for example `Profile 1`.
+  @ObservationIgnored private(set) var profileDirectory: URL = ChromeProfile.lastUsedDirectory()
   @ObservationIgnored private let log = Logger(subsystem: "com.ross.sidebar", category: "model")
 
   // MARK: - Refresh
@@ -37,9 +42,39 @@ final class SidebarModel {
     }
   }
 
+  /// Follows the profile of Chrome's front window, from its title.
+  func updateProfile(windowTitle: String?) {
+    guard let windowTitle else { return }
+    let base = ChromeProfile.defaultBase
+    guard
+      let localState = try? Data(contentsOf: base.appending(path: "Local State")),
+      let directory = ChromeProfiles.directory(
+        forWindowTitle: windowTitle, profiles: ChromeProfiles.parse(localState: localState))
+    else { return }
+    let next = base.appending(path: directory)
+    guard next != profileDirectory else { return }
+    profileDirectory = next
+    bookmarksModified = nil
+    themeModified = nil
+    refreshTheme()
+    refreshBookmarks()
+    refreshRecents()
+  }
+
+  /// Re-reads the profile's theme only when its Preferences file has changed.
+  func refreshTheme() {
+    let file = profileDirectory.appending(path: "Preferences")
+    let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    guard modified != themeModified else { return }
+    themeModified = modified
+    guard let data = try? Data(contentsOf: file) else { return }
+    let next = ProfileTheme.parse(preferences: data)
+    if next != theme { theme = next }
+  }
+
   /// Re-reads the Bookmarks file only when Chrome has changed it.
   func refreshBookmarks() {
-    let file = ChromeProfile.lastUsedDirectory().appending(path: "Bookmarks")
+    let file = profileDirectory.appending(path: "Bookmarks")
     let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     guard modified != bookmarksModified else { return }
     bookmarksModified = modified
@@ -51,7 +86,7 @@ final class SidebarModel {
   }
 
   func refreshRecents() {
-    let file = ChromeProfile.lastUsedDirectory().appending(path: "History")
+    let file = profileDirectory.appending(path: "History")
     do {
       recents = try ChromeHistory.recent(historyFile: file, limit: 30)
     } catch {
@@ -104,7 +139,7 @@ final class SidebarModel {
   func paletteSources() -> (tabs: [WindowTab], history: [HistoryItem]) {
     var tabs: [WindowTab] = []
     perform { (chrome) throws(ChromeError) in tabs = try chrome.allTabs() }
-    let file = ChromeProfile.lastUsedDirectory().appending(path: "History")
+    let file = profileDirectory.appending(path: "History")
     let history = (try? ChromeHistory.recent(historyFile: file, limit: 2000)) ?? recents
     return (tabs, history)
   }

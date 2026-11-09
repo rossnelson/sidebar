@@ -43,16 +43,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
 
-    tracker.onChange = { [weak self] frame in self?.layout(windowFrame: frame) }
+    tracker.onChange = { [weak self] frame, title in
+      self?.model.updateProfile(windowTitle: title)
+      self?.layout(windowFrame: frame)
+    }
     tracker.start()
 
+    model.refreshTheme()
     model.refreshBookmarks()
     model.refreshRecents()
     schedule(every: 1) { [weak self] in
       guard let self, panel.isVisible else { return }
       model.refreshTabs()
     }
-    schedule(every: 5) { [weak self] in self?.model.refreshBookmarks() }
+    schedule(every: 5) { [weak self] in
+      self?.model.refreshBookmarks()
+      self?.model.refreshTheme()
+    }
     schedule(every: 15) { [weak self] in
       guard let self, panel.isVisible else { return }
       model.refreshRecents()
@@ -72,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // Moving the window fires a move notification, which lays out again with room to spare.
       tracker.setCurrentWindowFrame(moved)
     }
+    panel.appearance = model.theme.appearance
     panel.setFrame(layout.panel, display: true)
     if !panel.isVisible {
       panel.orderFrontRegardless()

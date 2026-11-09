@@ -13,6 +13,7 @@ final class PaletteState {
   var tabs: [WindowTab] = []
   var history: [HistoryItem] = []
   var bookmarks: [BookmarkNode] = []
+  var theme = ProfileTheme.standard
 
   var results: [PaletteResult] {
     PaletteSearch.results(query: query, tabs: tabs, bookmarks: bookmarks, history: history)
@@ -56,12 +57,14 @@ final class PaletteController: NSObject, NSWindowDelegate {
     state.tabs = sources.tabs
     state.history = sources.history
     state.bookmarks = model.bookmarks
+    state.theme = model.theme
     state.query = ""
     state.selection = 0
 
     let panel = self.panel ?? makePanel()
     // A fresh view each time, so the search field takes focus on appear.
     panel.contentView = NSHostingView(rootView: PaletteView(state: state, onOpen: open))
+    panel.appearance = model.theme.appearance
     panel.setFrame(frame(over: windowFrame), display: true)
     panel.makeKeyAndOrderFront(nil)
     startKeyMonitor()
@@ -216,6 +219,7 @@ struct PaletteView: View {
       .padding(.vertical, 8)
     }
     .frame(width: PaletteController.size.width, height: PaletteController.size.height)
+    .modifier(Themed(theme: state.theme, cornerRadius: 14))
     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
     .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.08)))
     .onAppear { focused = true }
@@ -242,11 +246,7 @@ private struct PaletteRow: View {
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 7)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .contentShape(Rectangle())
-    .background(
-      RoundedRectangle(cornerRadius: 8)
-        .fill(selected ? AnyShapeStyle(.selection.opacity(0.4)) : AnyShapeStyle(.clear)))
+    .modifier(RowStyle(highlighted: selected, hovering: false, cornerRadius: 8))
   }
 
   private var showsURL: Bool {

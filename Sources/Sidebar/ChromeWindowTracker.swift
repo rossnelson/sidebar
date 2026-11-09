@@ -3,9 +3,9 @@ import ApplicationServices
 import SidebarCore
 
 /// Follows Chrome's focused browser window through the Accessibility API and
-/// reports its frame (Cocoa coordinates), or `nil` when the sidebar should hide.
+/// reports its frame (Cocoa coordinates) and title, or `nil` when the sidebar should hide.
 final class ChromeWindowTracker {
-  var onChange: (CGRect?) -> Void = { _ in }
+  var onChange: (_ frame: CGRect?, _ title: String?) -> Void = { _, _ in }
 
   private var observer: AXObserver?
   private var appElement: AXUIElement?
@@ -49,7 +49,7 @@ final class ChromeWindowTracker {
       .runningApplications(withBundleIdentifier: ChromeScripts.bundleID).first
     else {
       detach()
-      return report(nil)
+      return report(nil, title: nil)
     }
     if observedPID != chrome.processIdentifier { attach(pid: chrome.processIdentifier) }
 
@@ -57,10 +57,10 @@ final class ChromeWindowTracker {
       let appElement, let window = attachableWindow(of: appElement), let frame = frame(of: window)
     else {
       currentWindow = nil
-      return report(nil)
+      return report(nil, title: nil)
     }
     currentWindow = window
-    report(frame)
+    report(frame, title: copy(window, kAXTitleAttribute))
   }
 
   /// Moves and resizes the current Chrome window. `frame` is in Cocoa coordinates.
@@ -77,7 +77,7 @@ final class ChromeWindowTracker {
     }
   }
 
-  private func report(_ frame: CGRect?) { onChange(frame) }
+  private func report(_ frame: CGRect?, title: String?) { onChange(frame, title) }
 
   // MARK: - Observer
 

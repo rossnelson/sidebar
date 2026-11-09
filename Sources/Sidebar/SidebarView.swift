@@ -54,6 +54,7 @@ struct SidebarView: View {
         .padding(.bottom, 12)
       }
     }
+    .modifier(Themed(theme: model.theme))
   }
 }
 
@@ -239,11 +240,6 @@ private extension View {
   func rowStyle(highlighted: Bool, hovering: Bool) -> some View {
     padding(.horizontal, 8)
       .padding(.vertical, 5)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .contentShape(Rectangle())
-      .background(
-        RoundedRectangle(cornerRadius: 6)
-          .fill(highlighted ? AnyShapeStyle(.selection.opacity(0.35))
-            : hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear)))
+      .modifier(RowStyle(highlighted: highlighted, hovering: hovering))
   }
 }
