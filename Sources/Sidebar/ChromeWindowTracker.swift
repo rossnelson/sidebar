@@ -108,11 +108,25 @@ final class ChromeWindowTracker {
     let ax = ScreenCoordinates.flip(frame, primaryScreenHeight: Self.primaryScreenHeight)
     var origin = ax.origin
     var size = ax.size
-    if let value = AXValueCreate(.cgPoint, &origin) {
-      AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+    let setPosition = {
+      if let value = AXValueCreate(.cgPoint, &origin) {
+        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+      }
     }
-    if let value = AXValueCreate(.cgSize, &size) {
-      AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
+    let setSize = {
+      if let value = AXValueCreate(.cgSize, &size) {
+        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
+      }
+    }
+    // Shrink before moving and move before growing, so the window never
+    // passes through a frame that hangs off the screen (macOS would push it back).
+    let current = frameInAXCoordinates(of: window)
+    if let current, size.width < current.width || size.height < current.height {
+      setSize()
+      setPosition()
+    } else {
+      setPosition()
+      setSize()
     }
   }
 

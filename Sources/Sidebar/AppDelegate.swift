@@ -23,6 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var chromeWindow: ChromeWindow?
   /// The last frame we asked Chrome's window to take. Chrome settles near it, not on it.
   private var requestedFrame: CGRect?
+  /// After we move Chrome's window, its move and resize events describe
+  /// half-finished frames. Ignore them until this time, then lay out once.
+  private var settleUntil = Date.distantPast
+  private var settleTimer: Timer?
   private var windowFrame: CGRect? { chromeWindow?.frame }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -58,8 +62,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       palette.show(over: windowFrame)
     }
     tracker.onChange = { [weak self] window in
-      self?.model.updateProfile(windowTitle: window?.title)
-      self?.layout(window)
+      guard let self else { return }
+      model.updateProfile(windowTitle: window?.title)
+      if Date() < settleUntil, window != nil {
+        chromeWindow = window
+        return
+      }
+      layout(window)
     }
     tracker.start()
 
@@ -99,8 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let moved = layout.windowFrame,
       !(requestedFrame?.isClose(to: window.frame, within: 12) ?? false)
     {
-      requestedFrame = moved
-      tracker.setCurrentWindowFrame(moved)
+      moveChrome(to: moved)
     }
     panel.appearance = model.theme.appearance
     model.frameHole = layout.holeInFrame
@@ -134,10 +142,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       frame.origin.x += delta
       frame.size.width -= delta
     }
-    requestedFrame = frame
-    tracker.setCurrentWindowFrame(frame)
+    moveChrome(to: frame)
+    // Draw the frame at the final size now; Chrome's own events are ignored while it settles.
     window.frame = frame
     layout(window)
+  }
+
+  /// Moves Chrome's window, then ignores its events briefly and lays out once it has settled.
+  private func moveChrome(to frame: CGRect) {
+    requestedFrame = frame
+    settleUntil = Date().addingTimeInterval(0.35)
+    tracker.setCurrentWindowFrame(frame)
+    settleTimer?.invalidate()
+    let timer = Timer(timeInterval: 0.4, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated { self?.tracker.update() }
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    settleTimer = timer
   }
 
   private func setPeeking(_ peeking: Bool) {
