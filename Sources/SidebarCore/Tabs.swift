@@ -73,6 +73,44 @@ public enum ChromeScripts {
     end tell
     """
 
+  /// Every tab of every window, for the palette.
+  public static let allTabs = """
+    tell application id "\(bundleID)"
+      set rs to character id 30
+      set us to character id 31
+      set out to ""
+      repeat with w in windows
+        set wid to (id of w) as text
+        set ids to id of tabs of w
+        set titles to title of tabs of w
+        set urls to URL of tabs of w
+        repeat with i from 1 to count of ids
+          set out to out & rs & wid & us & ((item i of ids) as text) & us & (item i of titles) & us & (item i of urls)
+        end repeat
+      end repeat
+      return out
+    end tell
+    """
+
+  /// Switches to a tab in any window and brings that window to the front.
+  public static func activateTab(windowID: Int, tabID: Int) -> String {
+    """
+    tell application id "\(bundleID)"
+      set w to window id \(windowID)
+      set i to 0
+      repeat with t in tabs of w
+        set i to i + 1
+        if (id of t) is \(tabID) then
+          set active tab index of w to i
+          exit repeat
+        end if
+      end repeat
+      set index of w to 1
+      activate
+    end tell
+    """
+  }
+
   public static func activateTab(id: Int) -> String {
     """
     tell application id "\(bundleID)"

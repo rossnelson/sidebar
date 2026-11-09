@@ -8,8 +8,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let model = SidebarModel()
   private let tracker = ChromeWindowTracker()
   private lazy var panel = SidebarPanel(model: model)
+  private lazy var palette = PaletteController(model: model)
   private var statusItem: NSStatusItem?
   private var hotKey: HotKey?
+  /// Cmd+T. Registered only while Chrome is frontmost, so other apps keep their Cmd+T.
+  private var commandT: HotKey?
   private var timers: [Timer] = []
   private var userHidden = false
   private var windowFrame: CGRect?
@@ -19,6 +22,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKey = HotKey(keyCode: kVK_ANSI_S, modifiers: controlKey | cmdKey) { [weak self] in
       self?.toggle()
     }
+    commandT = HotKey(keyCode: kVK_ANSI_T, modifiers: cmdKey, enabled: false) { [weak self] in
+      guard let self else { return }
+      palette.commandT(over: windowFrame)
+    }
+    NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.updateCommandT() }
+    }
+    updateCommandT()
 
     if !ChromeWindowTracker.isTrusted(prompt: true) {
       model.problem = .accessibilityDenied
@@ -64,6 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       panel.orderFrontRegardless()
       model.refreshTabs()
     }
+  }
+
+  private func updateCommandT() {
+    let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    commandT?.isEnabled = front == ChromeScripts.bundleID
   }
 
   private func toggle() {

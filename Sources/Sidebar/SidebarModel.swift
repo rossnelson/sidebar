@@ -86,15 +86,27 @@ final class SidebarModel {
     defer { query = "" }
     if let tab = filteredTabs.first { return activate(tab) }
     if let link = filteredBookmarkLinks.first?.url ?? filteredRecents.first?.url { return open(link) }
-    open(Self.destination(for: text))
+    open(Destination.url(for: text))
   }
 
-  static func destination(for text: String) -> String {
-    if text.contains("://") { return text }
-    if !text.contains(" "), text.contains(".") { return "https://\(text)" }
-    var components = URLComponents(string: "https://www.google.com/search")!
-    components.queryItems = [URLQueryItem(name: "q", value: text)]
-    return components.url!.absoluteString
+  /// Opens a palette result: switches to a tab, or opens a URL in a new tab.
+  func open(_ result: PaletteResult) {
+    switch result.kind {
+    case let .tab(windowID, tabID):
+      perform { (chrome) throws(ChromeError) in try chrome.activateTab(windowID: windowID, tabID: tabID) }
+      refreshTabs()
+    case .bookmark, .history, .url, .search:
+      open(result.url)
+    }
+  }
+
+  /// Everything the palette searches. Reads more history than the sidebar shows.
+  func paletteSources() -> (tabs: [WindowTab], history: [HistoryItem]) {
+    var tabs: [WindowTab] = []
+    perform { (chrome) throws(ChromeError) in tabs = try chrome.allTabs() }
+    let file = ChromeProfile.lastUsedDirectory().appending(path: "History")
+    let history = (try? ChromeHistory.recent(historyFile: file, limit: 2000)) ?? recents
+    return (tabs, history)
   }
 
   private func perform(_ action: (ChromeController) throws(ChromeError) -> Void) {

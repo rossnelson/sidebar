@@ -165,7 +165,7 @@ extension SectionHeader where Accessory == EmptyView {
   }
 }
 
-private struct Favicon: View {
+struct Favicon: View {
   let url: String
 
   var body: some View {

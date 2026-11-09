@@ -122,3 +122,63 @@ import Testing
     #expect(ScreenCoordinates.flip(cocoa, primaryScreenHeight: 1000) == ax)
   }
 }
+
+@Suite struct PaletteRanking {
+  let tabs = [
+    WindowTab(windowID: 1, tab: ChromeTab(id: 10, title: "Inbox (3) - Gmail", url: "https://mail.google.com/mail/u/0/")),
+    WindowTab(windowID: 2, tab: ChromeTab(id: 20, title: "temporalio/ui: Pull requests", url: "https://github.com/temporalio/ui/pulls")),
+  ]
+  let bookmarks = [
+    BookmarkNode(id: "b1", title: "GitHub", url: "https://github.com/temporalio/ui/pulls"),
+    BookmarkNode(id: "b2", title: "Hacker News", url: "https://news.ycombinator.com/"),
+  ]
+  let history = [
+    HistoryItem(id: 1, title: "Swift Testing docs", url: "https://developer.apple.com/documentation/testing", lastVisit: .now),
+  ]
+
+  func titles(_ query: String) -> [String] {
+    PaletteSearch.results(query: query, tabs: tabs, bookmarks: bookmarks, history: history).map(\.title)
+  }
+
+  @Test func `an open tab ranks first and hides the same bookmark`() {
+    let results = PaletteSearch.results(query: "pull", tabs: tabs, bookmarks: bookmarks, history: history)
+    #expect(results.first?.kind == .tab(windowID: 2, tabID: 20))
+    #expect(!results.contains { $0.id == "bookmark-b1" })
+  }
+
+  @Test func `matches the host and fuzzy text`() {
+    #expect(titles("ycomb").first == "Hacker News")
+    #expect(titles("hknws").first == "Hacker News")
+  }
+
+  @Test func `every word must match`() {
+    #expect(titles("swift docs").first == "Swift Testing docs")
+    #expect(!titles("swift gmail").contains("Swift Testing docs"))
+  }
+
+  @Test func `search is always last and a URL comes first`() {
+    let results = PaletteSearch.results(query: "example.com", tabs: tabs, bookmarks: bookmarks, history: history)
+    #expect(results.first?.kind == .url)
+    #expect(results.first?.url == "https://example.com")
+    #expect(results.last?.kind == .search)
+  }
+
+  @Test func `empty query lists tabs then history`() {
+    #expect(titles("") == ["Inbox (3) - Gmail", "temporalio/ui: Pull requests", "Swift Testing docs"])
+  }
+
+  @Test(arguments: [
+    ("github.com", true), ("localhost:3000", true), ("https://a", true),
+    ("swift testing", false), ("v1.2", false), (".com", false), ("hello", false),
+  ])
+  func `detects URLs`(text: String, expected: Bool) {
+    #expect(Destination.looksLikeURL(text) == expected)
+  }
+
+  @Test func `parses tabs from every window`() {
+    let rs = TabSnapshot.recordSeparator, us = TabSnapshot.unitSeparator
+    let parsed = WindowTab.parseAll("\(rs)7\(us)1\(us)A\(us)https://a.com\(rs)8\(us)2\(us)B\(us)https://b.com")
+    #expect(parsed.map(\.windowID) == [7, 8])
+    #expect(parsed.map(\.tab.title) == ["A", "B"])
+  }
+}

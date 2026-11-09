@@ -12,6 +12,7 @@ enum ChromeError: Error, Equatable {
 /// few milliseconds, and the sidebar only polls while Chrome is frontmost.
 final class ChromeController {
   private lazy var tabsScript = NSAppleScript(source: ChromeScripts.frontWindowTabs)
+  private lazy var allTabsScript = NSAppleScript(source: ChromeScripts.allTabs)
 
   var isRunning: Bool {
     !NSRunningApplication.runningApplications(withBundleIdentifier: ChromeScripts.bundleID).isEmpty
@@ -21,6 +22,23 @@ final class ChromeController {
     guard isRunning else { throw .notRunning }
     guard let script = tabsScript else { throw .script(code: 0, message: "compile failed") }
     return TabSnapshot.parse(try execute(script).stringValue ?? "")
+  }
+
+  /// Every tab in every window.
+  func allTabs() throws(ChromeError) -> [WindowTab] {
+    guard isRunning else { throw .notRunning }
+    guard let script = allTabsScript else { throw .script(code: 0, message: "compile failed") }
+    return WindowTab.parseAll(try execute(script).stringValue ?? "")
+  }
+
+  func activateTab(windowID: Int, tabID: Int) throws(ChromeError) {
+    try run(ChromeScripts.activateTab(windowID: windowID, tabID: tabID))
+  }
+
+  /// Gives keyboard focus back to Chrome after one of our panels had it.
+  func focus() {
+    NSRunningApplication.runningApplications(withBundleIdentifier: ChromeScripts.bundleID)
+      .first?.activate()
   }
 
   func activateTab(id: Int) throws(ChromeError) {
