@@ -7,26 +7,50 @@ struct FrameView: View {
   let model: SidebarModel
   @Environment(\.colorScheme) private var colorScheme
 
-  /// Matches macOS's window corners, so the frame fills exactly to Chrome's edge.
-  nonisolated static let chromeCornerRadius: CGFloat = 12
-  nonisolated static let outerCornerRadius: CGFloat = 14
+  /// Chrome's window corner on macOS 26, measured from its window shape:
+  /// a continuous corner, 23 pt along each edge.
+  nonisolated static let chromeCornerRadius: CGFloat = 22.5
+  /// Concentric with Chrome's corner across the 8 pt border.
+  nonisolated static let outerCornerRadius: CGFloat = 30.5
 
   var body: some View {
-    let palette = SpaceColors.palette(for: model.theme, dark: colorScheme == .dark)
     ZStack(alignment: .topLeading) {
       FrameShape(hole: model.frameHole)
-        .fill(
-          LinearGradient(
-            colors: [Color(palette.gradientStart), Color(palette.gradientEnd)],
-            startPoint: .topLeading, endPoint: .bottomTrailing),
-          style: FillStyle(eoFill: true))
+        .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark), style: FillStyle(eoFill: true))
 
-      SidebarView(model: model)
-        .frame(width: max(model.frameHole.minX, 0))
-        .frame(maxHeight: .infinity, alignment: .top)
+      if model.isCollapsed {
+        // The left border: hovering it slides the sidebar out over Chrome.
+        Color.clear
+          .frame(width: max(model.frameHole.minX, 0))
+          .frame(maxHeight: .infinity)
+          .contentShape(Rectangle())
+          .onHover { if $0 { model.setPeeking(true) } }
+      } else {
+        SidebarView(model: model)
+          .frame(width: max(model.frameHole.minX, 0))
+          .frame(maxHeight: .infinity, alignment: .top)
+      }
     }
     .foregroundStyle(.white)
     .environment(\.sidebarColors, SpaceColors.rows)
+  }
+}
+
+/// The sidebar sliding out over Chrome while collapsed.
+struct PeekView: View {
+  let model: SidebarModel
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    SidebarView(model: model)
+      .padding(.vertical, 4)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .background(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark)))
+      .foregroundStyle(.white)
+      .environment(\.sidebarColors, SpaceColors.rows)
+      .onHover { model.setPeeking($0) }
   }
 }
 
@@ -54,6 +78,13 @@ enum SpaceColors {
   /// White rows on a vivid background, like Arc.
   static let rows = SidebarColors(
     background: nil, hover: .white.opacity(0.14), selected: .white.opacity(0.3), text: .white)
+
+  static func gradient(for theme: ProfileTheme, dark: Bool) -> LinearGradient {
+    let palette = palette(for: theme, dark: dark)
+    return LinearGradient(
+      colors: [Color(palette.gradientStart), Color(palette.gradientEnd)],
+      startPoint: .topLeading, endPoint: .bottomTrailing)
+  }
 
   /// The space's gradient. Chrome's default theme uses the system accent color.
   static func palette(for theme: ProfileTheme, dark: Bool) -> SpacePalette {
@@ -126,6 +157,9 @@ private struct TopBar: View {
 
   var body: some View {
     HStack(spacing: 14) {
+      IconButton(
+        symbol: "sidebar.left", help: model.isCollapsed ? "Keep Sidebar Open (⌃⌘S)" : "Collapse Sidebar (⌃⌘S)",
+        action: model.toggleCollapse)
       Spacer()
       IconButton(symbol: "arrow.left", help: "Back") { model.navigate(.back) }
       IconButton(symbol: "arrow.right", help: "Forward") { model.navigate(.forward) }

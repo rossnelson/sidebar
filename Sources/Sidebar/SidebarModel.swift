@@ -19,8 +19,19 @@ final class SidebarModel {
   /// Where Chrome's window sits inside the frame, top-left origin.
   var frameHole = CGRect.zero
 
+  /// Collapsed: only the border shows around Chrome, like Arc. Saved between launches.
+  var isCollapsed = UserDefaults.standard.bool(forKey: "collapsed") {
+    didSet { UserDefaults.standard.set(isCollapsed, forKey: "collapsed") }
+  }
+  /// While collapsed, the sidebar slides out over Chrome when the left border is hovered.
+  var isPeeking = false
+
   /// Opens the Cmd+T palette. Set by the app delegate.
   @ObservationIgnored var openPalette: () -> Void = {}
+  /// Collapses or expands the sidebar. Set by the app delegate.
+  @ObservationIgnored var toggleCollapse: () -> Void = {}
+  /// Shows or hides the peek. Set by the app delegate.
+  @ObservationIgnored var setPeeking: (Bool) -> Void = { _ in }
 
   var activeTab: ChromeTab? {
     snapshot.tabs.first { $0.id == snapshot.activeTabID }

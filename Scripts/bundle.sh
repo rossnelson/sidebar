@@ -32,7 +32,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Signs with SIDEBAR_SIGN_IDENTITY when set; otherwise ad-hoc. macOS ties the
-# Accessibility permission to the signature, so ad-hoc builds need it granted again.
-codesign --force --sign "${SIDEBAR_SIGN_IDENTITY:--}" --identifier com.ross.sidebar "$APP"
+# macOS ties the Accessibility permission to the signature. A stable certificate
+# keeps the permission across rebuilds; an ad-hoc signature changes every build.
+# Order: SIDEBAR_SIGN_IDENTITY, then a local "Sidebar Local Signing" certificate
+# (see README), then ad-hoc.
+IDENTITY="${SIDEBAR_SIGN_IDENTITY:-}"
+if [[ -z $IDENTITY ]]; then
+  IDENTITY=$(security find-identity -p codesigning 2>/dev/null \
+    | awk '/"Sidebar Local Signing"/ { print $2; exit }')
+fi
+codesign --force --sign "${IDENTITY:--}" --identifier com.ross.sidebar "$APP"
+[[ -n $IDENTITY ]] && echo "Signed with $IDENTITY" || echo "Signed ad-hoc"
 echo "Built $APP"

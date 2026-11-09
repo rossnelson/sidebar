@@ -31,3 +31,30 @@ final class SidebarPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 }
+
+/// The sidebar sliding out over Chrome's left edge while collapsed.
+final class PeekPanel: NSPanel {
+  init(model: SidebarModel) {
+    super.init(
+      contentRect: NSRect(x: 0, y: 0, width: 250, height: 600),
+      styleMask: [.borderless, .nonactivatingPanel],
+      backing: .buffered,
+      defer: false
+    )
+    level = .floating
+    collectionBehavior = [.fullScreenNone, .ignoresCycle]
+    isOpaque = false
+    backgroundColor = .clear
+    hasShadow = true
+    hidesOnDeactivate = false
+    isMovable = false
+    animationBehavior = .none
+
+    let host = NSHostingView(rootView: PeekView(model: model))
+    host.sizingOptions = []
+    contentView = host
+  }
+
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { false }
+}
