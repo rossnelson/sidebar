@@ -45,6 +45,16 @@ final class ChromeController {
     try run(ChromeScripts.activateTab(id: id))
   }
 
+  /// The active tab's URL in the front window, or `nil` when there is none.
+  func activeTabURL() throws(ChromeError) -> String? {
+    guard isRunning else { throw .notRunning }
+    guard let script = NSAppleScript(source: ChromeScripts.activeTabURL) else {
+      throw .script(code: 0, message: "compile failed")
+    }
+    let url = try execute(script).stringValue ?? ""
+    return url.isEmpty ? nil : url
+  }
+
   func navigate(_ navigation: ChromeScripts.Navigation) throws(ChromeError) {
     try run(ChromeScripts.navigate(navigation))
   }

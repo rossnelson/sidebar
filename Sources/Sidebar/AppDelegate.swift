@@ -15,6 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var panel = SidebarPanel(model: model)
   private lazy var palette = PaletteController(model: model)
   private lazy var peekPanel = PeekPanel(model: model)
+  private let preferences = Preferences()
+  private lazy var settings = SettingsWindowController(preferences: preferences)
+  private let toast = ToastController()
+  /// Copy the current URL. Registered only while Chrome is frontmost.
+  private var copyURL: HotKey?
   private var peekHideTimer: Timer?
   /// Our frame window's last frame, for placing the peek.
   private var frameRect: CGRect?
@@ -45,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       guard let self else { return }
       palette.commandT(over: windowFrame)
     }
+    registerCopyURL()
+    preferences.onChange = { [weak self] in self?.registerCopyURL() }
     NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
     ) { [weak self] _ in
@@ -149,9 +156,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if !wasVisible { model.refreshTabs() }
   }
 
+  /// Turns on the Chrome-only hotkeys while Chrome is frontmost, so other apps keep these keys.
   private func updateCommandT() {
-    let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-    commandT?.isEnabled = front == ChromeScripts.bundleID
+    let chromeInFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ChromeScripts.bundleID
+    commandT?.isEnabled = chromeInFront
+    copyURL?.isEnabled = chromeInFront
+  }
+
+  private func registerCopyURL() {
+    let shortcut = preferences.copyURLShortcut
+    copyURL = nil
+    copyURL = HotKey(keyCode: Int(shortcut.keyCode), modifiers: shortcut.carbonModifiers, enabled: false) {
+      [weak self] in self?.copyCurrentURL()
+    }
+    updateCommandT()
+  }
+
+  private func copyCurrentURL() {
+    do {
+      guard let url = try model.chrome.activeTabURL() else { return }
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(url, forType: .string)
+      toast.show("Copied URL", systemImage: "link", over: windowFrame)
+    } catch .notAuthorized {
+      model.problem = .automationDenied
+    } catch {
+      toast.show("Could not read the URL", systemImage: "exclamationmark.triangle", over: windowFrame)
+    }
   }
 
   /// Lets the mouse through to Chrome while the pointer is over Chrome's window.
@@ -245,6 +276,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       .target = self
     menu.addItem(withTitle: "Reload Bookmarks and History", action: #selector(reload), keyEquivalent: "")
       .target = self
+    menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+      .target = self
     menu.addItem(.separator())
     menu.addItem(withTitle: "Quit Sidebar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     item.menu = menu
@@ -252,6 +285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   @objc private func toggleFromMenu() { toggleCollapse() }
+
+  @objc private func openSettings() { settings.show() }
 
   @objc private func reload() {
     model.refreshBookmarks()

@@ -412,3 +412,26 @@ private typealias M = KeyRouting.Modifiers
     #expect(!KeyRouting.forwardsToChrome(keyCode: key, modifiers: modifiers))
   }
 }
+
+@Suite struct Shortcuts {
+  @Test func `default is Shift-Command-C`() {
+    #expect(Shortcut.copyURLDefault.displayString == "⇧⌘C")
+  }
+
+  @Test func `modifiers display in Apple's order`() {
+    let shortcut = Shortcut(keyCode: 37, modifiers: [.command, .option, .control, .shift])
+    #expect(shortcut.displayString == "⌃⌥⇧⌘L")
+  }
+
+  @Test func `needs Command, Control or Option`() {
+    #expect(!Shortcut(keyCode: 8, modifiers: .shift).isValid)
+    #expect(!Shortcut(keyCode: 8, modifiers: []).isValid)
+    #expect(Shortcut(keyCode: 8, modifiers: [.option]).isValid)
+  }
+
+  @Test func `round-trips through JSON`() throws {
+    let shortcut = Shortcut(keyCode: 15, modifiers: [.control, .command])
+    let data = try JSONEncoder().encode(shortcut)
+    #expect(try JSONDecoder().decode(Shortcut.self, from: data) == shortcut)
+  }
+}

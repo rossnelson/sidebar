@@ -73,6 +73,14 @@ public enum ChromeScripts {
     end tell
     """
 
+  /// The active tab's URL in the front window, or "" when there is no window.
+  public static let activeTabURL = """
+    tell application id "\(bundleID)"
+      if (count of windows) is 0 then return ""
+      return URL of active tab of front window
+    end tell
+    """
+
   /// Every tab of every window, for the palette.
   public static let allTabs = """
     tell application id "\(bundleID)"
