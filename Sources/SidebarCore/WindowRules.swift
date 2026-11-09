@@ -90,38 +90,53 @@ public struct FrameLayout: Sendable, Equatable {
 
   public static let minimumWindowSize = CGSize(width: 500, height: 300)
 
+  /// Overflow up to this many points counts as fitting. Chrome often settles a
+  /// point or two from where it was placed; without slack, each correction
+  /// would trigger another one and the window would shrink step by step.
+  public static let tolerance: CGFloat = 6
+
   public static func compute(
     window: CGRect, screen: CGRect, sidebarWidth: CGFloat, margin: CGFloat
   ) -> FrameLayout {
     var target = window
+    let slack = tolerance
     // Room for the sidebar on the left.
-    if target.minX < screen.minX + sidebarWidth {
+    if target.minX < screen.minX + sidebarWidth - slack {
       target.origin.x = screen.minX + sidebarWidth
     }
     // Margin on the right, top and bottom.
-    if target.maxX > screen.maxX - margin {
+    if target.maxX > screen.maxX - margin + slack {
       target.size.width = max(screen.maxX - margin - target.minX, minimumWindowSize.width)
     }
-    if target.minY < screen.minY + margin {
+    if target.minY < screen.minY + margin - slack {
       target.size.height -= screen.minY + margin - target.minY
       target.origin.y = screen.minY + margin
     }
-    if target.maxY > screen.maxY - margin {
-      target.size.height = target.height - (target.maxY - (screen.maxY - margin))
+    if target.maxY > screen.maxY - margin + slack {
+      target.size.height -= target.maxY - (screen.maxY - margin)
     }
     target.size.height = max(target.height, minimumWindowSize.height)
-    target = target.integral
+    target = CGRect(
+      x: target.minX.rounded(), y: target.minY.rounded(),
+      width: target.width.rounded(), height: target.height.rounded())
 
     let frame = CGRect(
       x: target.minX - sidebarWidth, y: target.minY - margin,
       width: sidebarWidth + target.width + margin, height: target.height + margin * 2)
-    let moved = abs(target.minX - window.minX) > 0.5 || abs(target.minY - window.minY) > 0.5
-      || abs(target.width - window.width) > 0.5 || abs(target.height - window.height) > 0.5
-    return FrameLayout(frame: frame, hole: target, windowFrame: moved ? target : nil)
+    return FrameLayout(
+      frame: frame, hole: target, windowFrame: target.isClose(to: window, within: 0.5) ? nil : target)
   }
 
   /// The hole in the frame's own coordinates, with a top-left origin (SwiftUI).
   public var holeInFrame: CGRect {
     CGRect(x: hole.minX - frame.minX, y: frame.maxY - hole.maxY, width: hole.width, height: hole.height)
+  }
+}
+
+extension CGRect {
+  /// True when every edge is within `distance` points of the other rect's edge.
+  public func isClose(to other: CGRect, within distance: CGFloat) -> Bool {
+    abs(minX - other.minX) <= distance && abs(minY - other.minY) <= distance
+      && abs(maxX - other.maxX) <= distance && abs(maxY - other.maxY) <= distance
   }
 }

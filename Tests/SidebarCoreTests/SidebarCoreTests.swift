@@ -310,3 +310,28 @@ import Testing
     #expect(ChromeScripts.navigate(.reload).contains("to reload"))
   }
 }
+
+@Suite struct FrameStability {
+  let screen = CGRect(x: 0, y: 0, width: 1728, height: 1080)
+
+  @Test func `a window a few points off does not move`() {
+    // Where the last correction put it, give or take Chrome's settling.
+    let settled = CGRect(x: 258, y: 6, width: 1464, height: 1068)
+    let layout = FrameLayout.compute(window: settled, screen: screen, sidebarWidth: 260, margin: 8)
+    #expect(layout.windowFrame == nil)
+  }
+
+  @Test func `repeated layouts converge after one correction`() {
+    var window = screen
+    var corrections = 0
+    for _ in 0..<20 {
+      let layout = FrameLayout.compute(window: window, screen: screen, sidebarWidth: 260, margin: 8)
+      guard let moved = layout.windowFrame else { break }
+      corrections += 1
+      // Chrome settles one point up and one point wider than asked.
+      window = moved.offsetBy(dx: 0, dy: 1).insetBy(dx: -0.5, dy: 0)
+    }
+    #expect(corrections == 1)
+    #expect(window.height > 1000)
+  }
+}

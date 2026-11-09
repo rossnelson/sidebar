@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var timers: [Timer] = []
   private var userHidden = false
   private var chromeWindow: ChromeWindow?
+  /// The last frame we asked Chrome's window to take. Chrome settles near it, not on it.
+  private var requestedFrame: CGRect?
   private var windowFrame: CGRect? { chromeWindow?.frame }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -84,8 +86,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let visible = screen?.visibleFrame ?? window.frame
     let layout = FrameLayout.compute(
       window: window.frame, screen: visible, sidebarWidth: Self.sidebarWidth, margin: Self.margin)
-    if let moved = layout.windowFrame {
-      // Moving the window fires a move notification, which lays out again.
+    // Correct the window once per move by the person; never chase Chrome's settling.
+    if let moved = layout.windowFrame,
+      !(requestedFrame?.isClose(to: window.frame, within: 12) ?? false)
+    {
+      requestedFrame = moved
       tracker.setCurrentWindowFrame(moved)
     }
     panel.appearance = model.theme.appearance
