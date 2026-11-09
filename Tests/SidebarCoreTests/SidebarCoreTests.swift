@@ -370,3 +370,10 @@ extension BookmarkMerging {
     #expect(Set(nodes.map(\.id)).count == nodes.count)
   }
 }
+
+extension Favorites {
+  @Test(arguments: [(0, 4), (1, 4), (4, 4), (5, 8), (8, 8), (9, 12), (12, 12)])
+  func `adds a row only when a favorite needs it`(count: Int, slots: Int) {
+    #expect(FavoritesStore.slotCount(for: count) == slots)
+  }
+}

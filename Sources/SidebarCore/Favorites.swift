@@ -51,6 +51,15 @@ public struct FavoritesStore: Sendable {
     try encoder.encode(favorites).write(to: file, options: .atomic)
   }
 
+  public static let columns = 4
+
+  /// Tiles to draw: the favorites plus empty slots to finish their last row.
+  /// One row at least, so an empty space still shows where favorites go.
+  public static func slotCount(for favoriteCount: Int) -> Int {
+    let rows = max(1, (favoriteCount + columns - 1) / columns)
+    return min(rows * columns, capacity)
+  }
+
   /// Adds a favorite unless the URL is already there or the grid is full.
   public static func adding(_ favorite: Favorite, to favorites: [Favorite]) -> [Favorite] {
     guard favorites.count < capacity, !favorites.contains(where: { $0.url == favorite.url }) else {

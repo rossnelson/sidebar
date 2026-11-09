@@ -216,13 +216,13 @@ private struct AddressPill: View {
 /// The space's favorites as icon tiles, four to a row, with dim empty slots.
 private struct FavoritesGrid: View {
   let model: SidebarModel
-  private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
+  private let columns = Array(
+    repeating: GridItem(.flexible(), spacing: 8), count: FavoritesStore.columns)
 
   var body: some View {
     let favorites = model.favorites
-    let slots = max(4, Int((Double(favorites.count + 1) / 4).rounded(.up)) * 4)
     LazyVGrid(columns: columns, spacing: 8) {
-      ForEach(0..<min(slots, FavoritesStore.capacity), id: \.self) { index in
+      ForEach(0..<FavoritesStore.slotCount(for: favorites.count), id: \.self) { index in
         if favorites.indices.contains(index) {
           FavoriteTile(
             favorite: favorites[index],
