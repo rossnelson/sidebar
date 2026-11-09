@@ -1,18 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// A borderless panel that can take keyboard focus (for the search box) without
-/// activating this app, so Chrome stays the frontmost app.
+/// The Arc-style frame: the sidebar on the left and a border around Chrome's
+/// window, with a transparent hole where Chrome sits. It takes keyboard focus
+/// without activating this app, so Chrome stays the frontmost app.
 final class SidebarPanel: NSPanel {
   init(model: SidebarModel) {
     super.init(
-      contentRect: NSRect(x: 0, y: 0, width: 260, height: 600),
+      contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
       styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered,
       defer: false
     )
-    level = .floating
-    collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+    // A normal window, kept directly below Chrome's window by the app delegate.
+    level = .normal
+    collectionBehavior = [.fullScreenNone, .ignoresCycle]
     isOpaque = false
     backgroundColor = .clear
     hasShadow = true
@@ -20,24 +22,10 @@ final class SidebarPanel: NSPanel {
     isMovable = false
     animationBehavior = .none
 
-    let background = NSVisualEffectView()
-    background.material = .sidebar
-    background.blendingMode = .behindWindow
-    background.state = .active
-    background.wantsLayer = true
-    background.layer?.cornerRadius = 10
-    background.layer?.masksToBounds = true
-
-    let host = NSHostingView(rootView: SidebarView(model: model))
-    host.translatesAutoresizingMaskIntoConstraints = false
-    background.addSubview(host)
-    NSLayoutConstraint.activate([
-      host.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-      host.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-      host.topAnchor.constraint(equalTo: background.topAnchor),
-      host.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-    ])
-    contentView = background
+    let host = NSHostingView(rootView: FrameView(model: model))
+    // The window's size comes from Chrome's window, never from the SwiftUI content.
+    host.sizingOptions = []
+    contentView = host
   }
 
   override var canBecomeKey: Bool { true }

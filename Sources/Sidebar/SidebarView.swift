@@ -2,59 +2,232 @@ import AppKit
 import SidebarCore
 import SwiftUI
 
+/// The whole frame: the space's gradient with a hole for Chrome, and the sidebar.
+struct FrameView: View {
+  let model: SidebarModel
+  @Environment(\.colorScheme) private var colorScheme
+
+  /// Matches macOS's window corners, so the frame fills exactly to Chrome's edge.
+  nonisolated static let chromeCornerRadius: CGFloat = 12
+  nonisolated static let outerCornerRadius: CGFloat = 14
+
+  var body: some View {
+    let palette = SpaceColors.palette(for: model.theme, dark: colorScheme == .dark)
+    ZStack(alignment: .topLeading) {
+      FrameShape(hole: model.frameHole)
+        .fill(
+          LinearGradient(
+            colors: [Color(palette.gradientStart), Color(palette.gradientEnd)],
+            startPoint: .topLeading, endPoint: .bottomTrailing),
+          style: FillStyle(eoFill: true))
+
+      SidebarView(model: model)
+        .frame(width: max(model.frameHole.minX, 0))
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+    .foregroundStyle(.white)
+    .environment(\.sidebarColors, SpaceColors.rows)
+  }
+}
+
+/// A rounded rectangle with a rounded hole, filled even-odd.
+private struct FrameShape: Shape {
+  var hole: CGRect
+
+  func path(in rect: CGRect) -> Path {
+    var path = Path()
+    path.addRoundedRect(
+      in: rect,
+      cornerSize: CGSize(width: FrameView.outerCornerRadius, height: FrameView.outerCornerRadius),
+      style: .continuous)
+    if hole.width > 0, hole.height > 0 {
+      path.addRoundedRect(
+        in: hole,
+        cornerSize: CGSize(width: FrameView.chromeCornerRadius, height: FrameView.chromeCornerRadius),
+        style: .continuous)
+    }
+    return path
+  }
+}
+
+enum SpaceColors {
+  /// White rows on a vivid background, like Arc.
+  static let rows = SidebarColors(
+    background: nil, hover: .white.opacity(0.14), selected: .white.opacity(0.3), text: .white)
+
+  /// The space's gradient. Chrome's default theme uses the system accent color.
+  static func palette(for theme: ProfileTheme, dark: Bool) -> SpacePalette {
+    let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+    let fallback = RGB(r: accent.redComponent, g: accent.greenComponent, b: accent.blueComponent).hex
+    return SpacePalette.make(seed: theme.seed ?? fallback, dark: dark, grayscale: theme.grayscale)
+  }
+}
+
+// MARK: - Sidebar
+
 struct SidebarView: View {
   @Bindable var model: SidebarModel
 
   var body: some View {
-    VStack(spacing: 0) {
-      SearchField(text: $model.query, onSubmit: model.submitQuery)
-        .padding(.horizontal, 10)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+    VStack(alignment: .leading, spacing: 10) {
+      TopBar(model: model)
+      AddressPill(tab: model.activeTab, onOpen: model.openPalette)
+      FavoritesGrid(model: model)
 
       if let problem = model.problem {
         ProblemBanner(problem: problem)
       }
 
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: 1) {
-          SectionHeader(title: "Tabs") {
-            Button(action: model.newTab) { Image(systemName: "plus") }
-              .buttonStyle(.borderless)
-              .help("New Tab")
+        LazyVStack(alignment: .leading, spacing: 2) {
+          if !model.spaceName.isEmpty {
+            Text(model.spaceName)
+              .font(.system(size: 12, weight: .semibold))
+              .opacity(0.7)
+              .padding(.horizontal, 10)
+              .padding(.bottom, 4)
           }
-          ForEach(model.filteredTabs) { tab in
+
+          ForEach(model.bookmarks) { node in
+            BookmarkTree(node: node, depth: 0, open: model.open)
+          }
+
+          if !model.bookmarks.isEmpty {
+            Rectangle()
+              .fill(.white.opacity(0.25))
+              .frame(height: 1)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 8)
+          }
+
+          ForEach(model.snapshot.tabs) { tab in
             TabRow(
               tab: tab,
               isActive: tab.id == model.snapshot.activeTabID,
               onSelect: { model.activate(tab) },
-              onClose: { model.close(tab) })
+              onClose: { model.close(tab) },
+              onFavorite: { model.addFavorite(tab) })
           }
 
-          if model.isSearching {
-            if !model.filteredBookmarkLinks.isEmpty { SectionHeader(title: "Bookmarks") }
-            ForEach(model.filteredBookmarkLinks) { link in
-              LinkRow(title: link.title, url: link.url ?? "") { model.open(link.url ?? "") }
-            }
-          } else if !model.bookmarks.isEmpty {
-            SectionHeader(title: "Bookmarks")
-            ForEach(model.bookmarks) { node in
-              BookmarkTree(node: node, depth: 0, open: model.open)
-            }
-          }
-
-          if !model.filteredRecents.isEmpty {
-            SectionHeader(title: "Recent")
-            ForEach(model.filteredRecents.prefix(model.isSearching ? 30 : 12)) { item in
-              LinkRow(title: item.title, url: item.url) { model.open(item.url) }
-            }
-          }
+          NewTabRow(onTap: model.newTab)
         }
-        .padding(.horizontal, 6)
         .padding(.bottom, 12)
       }
+      .scrollIndicators(.never)
     }
-    .modifier(Themed(theme: model.theme))
+    .padding(.leading, 10)
+    .padding(.trailing, 6)
+    .padding(.top, 10)
+  }
+}
+
+private struct TopBar: View {
+  let model: SidebarModel
+
+  var body: some View {
+    HStack(spacing: 14) {
+      Spacer()
+      IconButton(symbol: "arrow.left", help: "Back") { model.navigate(.back) }
+      IconButton(symbol: "arrow.right", help: "Forward") { model.navigate(.forward) }
+      IconButton(symbol: "arrow.clockwise", help: "Reload") { model.navigate(.reload) }
+    }
+    .padding(.horizontal, 6)
+    .frame(height: 24)
+  }
+}
+
+private struct IconButton: View {
+  let symbol: String
+  let help: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
+    }
+    .buttonStyle(.plain)
+    .opacity(0.85)
+    .help(help)
+  }
+}
+
+/// Shows the active tab's site; a click opens the Cmd+T palette.
+private struct AddressPill: View {
+  let tab: ChromeTab?
+  let onOpen: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "link").font(.system(size: 11, weight: .semibold)).opacity(0.7)
+      Text(host).font(.system(size: 13, weight: .medium)).lineLimit(1)
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 12)
+    .frame(height: 34)
+    .background(.white.opacity(hovering ? 0.24 : 0.16), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .contentShape(Rectangle())
+    .onHover { hovering = $0 }
+    .onTapGesture(perform: onOpen)
+    .help("Search tabs, bookmarks and history (⌘T)")
+  }
+
+  private var host: String {
+    guard let tab else { return "Search or enter URL" }
+    guard let host = URL(string: tab.url)?.host() else { return tab.title }
+    return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+  }
+}
+
+/// The space's favorites as icon tiles, four to a row, with dim empty slots.
+private struct FavoritesGrid: View {
+  let model: SidebarModel
+  private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
+
+  var body: some View {
+    let favorites = model.favorites
+    let slots = max(4, Int((Double(favorites.count + 1) / 4).rounded(.up)) * 4)
+    LazyVGrid(columns: columns, spacing: 8) {
+      ForEach(0..<min(slots, FavoritesStore.capacity), id: \.self) { index in
+        if favorites.indices.contains(index) {
+          FavoriteTile(
+            favorite: favorites[index],
+            isActive: model.isActive(favorites[index]),
+            onOpen: { model.openFavorite(favorites[index]) },
+            onRemove: { model.removeFavorite(favorites[index]) })
+        } else {
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(.white.opacity(0.1))
+            .frame(height: 46)
+            .help("Right-click a tab and choose Add to Favorites")
+        }
+      }
+    }
+  }
+}
+
+private struct FavoriteTile: View {
+  let favorite: Favorite
+  let isActive: Bool
+  let onOpen: () -> Void
+  let onRemove: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Favicon(url: favorite.url, size: 20)
+      .frame(maxWidth: .infinity)
+      .frame(height: 46)
+      .background(
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+          .fill(.white.opacity(isActive ? 0.5 : hovering ? 0.28 : 0.18)))
+      .shadow(color: .black.opacity(isActive ? 0.15 : 0), radius: 3, y: 1)
+      .contentShape(Rectangle())
+      .onHover { hovering = $0 }
+      .onTapGesture(perform: onOpen)
+      .help(favorite.title)
+      .contextMenu {
+        Button("Remove from Favorites", role: .destructive, action: onRemove)
+      }
   }
 }
 
@@ -65,26 +238,52 @@ private struct TabRow: View {
   let isActive: Bool
   let onSelect: () -> Void
   let onClose: () -> Void
+  let onFavorite: () -> Void
   @State private var hovering = false
 
   var body: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: 10) {
       Favicon(url: tab.url)
       Text(tab.title.isEmpty ? tab.url : tab.title)
+        .font(.system(size: 13, weight: .medium))
         .lineLimit(1)
         .truncationMode(.tail)
       Spacer(minLength: 0)
       if hovering {
         Button(action: onClose) {
-          Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+          Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
+        .opacity(0.8)
         .help("Close Tab")
       }
     }
     .rowStyle(highlighted: isActive, hovering: hovering)
+    .shadow(color: .black.opacity(isActive ? 0.12 : 0), radius: 2, y: 1)
     .onHover { hovering = $0 }
     .onTapGesture(perform: onSelect)
+    .contextMenu {
+      Button("Add to Favorites", action: onFavorite)
+      Divider()
+      Button("Close Tab", action: onClose)
+    }
+  }
+}
+
+private struct NewTabRow: View {
+  let onTap: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).frame(width: 16)
+      Text("New Tab").font(.system(size: 13, weight: .medium))
+      Spacer(minLength: 0)
+    }
+    .opacity(0.75)
+    .rowStyle(highlighted: false, hovering: hovering)
+    .onHover { hovering = $0 }
+    .onTapGesture(perform: onTap)
   }
 }
 
@@ -95,9 +294,12 @@ private struct LinkRow: View {
   @State private var hovering = false
 
   var body: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: 10) {
       Favicon(url: url)
-      Text(title.isEmpty ? url : title).lineLimit(1).truncationMode(.tail)
+      Text(title.isEmpty ? url : title)
+        .font(.system(size: 13, weight: .medium))
+        .lineLimit(1)
+        .truncationMode(.tail)
       Spacer(minLength: 0)
     }
     .rowStyle(highlighted: false, hovering: hovering)
@@ -116,16 +318,14 @@ private struct BookmarkTree: View {
 
   var body: some View {
     if node.isFolder {
-      HStack(spacing: 6) {
-        Image(systemName: "chevron.right")
-          .font(.system(size: 9, weight: .semibold))
-          .rotationEffect(.degrees(expanded ? 90 : 0))
-          .frame(width: 10)
-        Image(systemName: "folder").foregroundStyle(.secondary)
-        Text(node.title).lineLimit(1)
+      HStack(spacing: 10) {
+        Image(systemName: expanded ? "folder.fill" : "folder")
+          .font(.system(size: 13))
+          .frame(width: 16)
+        Text(node.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
         Spacer(minLength: 0)
       }
-      .padding(.leading, CGFloat(depth) * 12)
+      .padding(.leading, CGFloat(depth) * 14)
       .rowStyle(highlighted: false, hovering: hovering)
       .onHover { hovering = $0 }
       .onTapGesture { withAnimation(.snappy(duration: 0.15)) { expanded.toggle() } }
@@ -137,68 +337,31 @@ private struct BookmarkTree: View {
       }
     } else {
       LinkRow(title: node.title, url: node.url ?? "") { open(node.url ?? "") }
-        .padding(.leading, CGFloat(depth) * 12 + (depth > 0 ? 16 : 0))
+        .padding(.leading, CGFloat(depth) * 14)
     }
   }
 }
 
 // MARK: - Pieces
 
-private struct SectionHeader<Accessory: View>: View {
-  let title: String
-  @ViewBuilder var accessory: Accessory
-
-  var body: some View {
-    HStack {
-      Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-      Spacer()
-      accessory
-    }
-    .padding(.horizontal, 8)
-    .padding(.top, 12)
-    .padding(.bottom, 4)
-  }
-}
-
-extension SectionHeader where Accessory == EmptyView {
-  init(title: String) {
-    self.init(title: title) { EmptyView() }
-  }
-}
-
 struct Favicon: View {
   let url: String
+  var size: CGFloat = 16
 
   var body: some View {
     AsyncImage(url: Self.source(for: url)) { image in
       image.resizable().interpolation(.high)
     } placeholder: {
-      Image(systemName: "globe").foregroundStyle(.tertiary)
+      Image(systemName: "globe").opacity(0.6)
     }
-    .frame(width: 16, height: 16)
+    .frame(width: size, height: size)
+    .clipShape(RoundedRectangle(cornerRadius: size / 5, style: .continuous))
   }
 
   /// Chrome's favicon cache is not readable from outside, so use Google's favicon service.
   static func source(for url: String) -> URL? {
     guard let host = URL(string: url)?.host(), !host.isEmpty else { return nil }
-    return URL(string: "https://www.google.com/s2/favicons?sz=32&domain=\(host)")
-  }
-}
-
-private struct SearchField: View {
-  @Binding var text: String
-  let onSubmit: () -> Void
-
-  var body: some View {
-    HStack(spacing: 6) {
-      Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-      TextField("Search or enter URL", text: $text)
-        .textFieldStyle(.plain)
-        .onSubmit(onSubmit)
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 6)
-    .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 7))
+    return URL(string: "https://www.google.com/s2/favicons?sz=64&domain=\(host)")
   }
 }
 
@@ -211,10 +374,9 @@ private struct ProblemBanner: View {
       Button("Open System Settings") { NSWorkspace.shared.open(settingsURL) }
         .controlSize(.small)
     }
-    .padding(8)
+    .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 7))
-    .padding(.horizontal, 10)
+    .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
   }
 
   private var message: String {
@@ -238,8 +400,8 @@ private struct ProblemBanner: View {
 
 private extension View {
   func rowStyle(highlighted: Bool, hovering: Bool) -> some View {
-    padding(.horizontal, 8)
-      .padding(.vertical, 5)
-      .modifier(RowStyle(highlighted: highlighted, hovering: hovering))
+    padding(.horizontal, 10)
+      .frame(height: 34)
+      .modifier(RowStyle(highlighted: highlighted, hovering: hovering, cornerRadius: 9))
   }
 }

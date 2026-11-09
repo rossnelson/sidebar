@@ -189,3 +189,21 @@ public struct LCh: Sendable, Equatable {
     return RGB(r: gamma(lr), g: gamma(lg), b: gamma(lb))
   }
 }
+
+/// Arc-style space colors: a vivid two-stop gradient around the seed's hue,
+/// with white text on top.
+public struct SpacePalette: Sendable, Equatable {
+  public var gradientStart: RGB
+  public var gradientEnd: RGB
+
+  public static func make(seed: UInt32, dark: Bool, grayscale: Bool = false) -> SpacePalette {
+    let hue = LCh(rgb: RGB(hex: seed)).h
+    let scale = grayscale ? 0.0 : 1.0
+    func tone(_ l: Double, _ c: Double, _ shift: Double) -> RGB {
+      LCh(l: l, c: c * scale, h: (hue + shift + 360).truncatingRemainder(dividingBy: 360)).rgb
+    }
+    return dark
+      ? SpacePalette(gradientStart: tone(34, 32, -12), gradientEnd: tone(24, 36, 12))
+      : SpacePalette(gradientStart: tone(64, 50, -12), gradientEnd: tone(52, 60, 12))
+  }
+}

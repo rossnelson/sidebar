@@ -141,6 +141,16 @@ public enum ChromeScripts {
     """
   }
 
+  public enum Navigation: String, Sendable { case back = "go back", forward = "go forward", reload }
+
+  public static func navigate(_ navigation: Navigation) -> String {
+    """
+    tell application id "\(bundleID)"
+      if (count of windows) > 0 then tell active tab of front window to \(navigation.rawValue)
+    end tell
+    """
+  }
+
   /// Opens `url` in a new tab of the front window, or a new window when none is open.
   public static func openInNewTab(_ url: String) -> String {
     """

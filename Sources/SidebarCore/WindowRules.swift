@@ -77,3 +77,51 @@ public enum ScreenCoordinates {
       width: rect.width, height: rect.height)
   }
 }
+
+/// Arc-style frame around Chrome: a sidebar on the left and a margin on the
+/// other three sides. Chrome's window sits in the hole. Cocoa coordinates.
+public struct FrameLayout: Sendable, Equatable {
+  /// Our window: sidebar plus margins plus Chrome.
+  public var frame: CGRect
+  /// Where Chrome's window sits.
+  public var hole: CGRect
+  /// A new frame for Chrome when it must move or shrink to fit. `nil` means leave it.
+  public var windowFrame: CGRect?
+
+  public static let minimumWindowSize = CGSize(width: 500, height: 300)
+
+  public static func compute(
+    window: CGRect, screen: CGRect, sidebarWidth: CGFloat, margin: CGFloat
+  ) -> FrameLayout {
+    var target = window
+    // Room for the sidebar on the left.
+    if target.minX < screen.minX + sidebarWidth {
+      target.origin.x = screen.minX + sidebarWidth
+    }
+    // Margin on the right, top and bottom.
+    if target.maxX > screen.maxX - margin {
+      target.size.width = max(screen.maxX - margin - target.minX, minimumWindowSize.width)
+    }
+    if target.minY < screen.minY + margin {
+      target.size.height -= screen.minY + margin - target.minY
+      target.origin.y = screen.minY + margin
+    }
+    if target.maxY > screen.maxY - margin {
+      target.size.height = target.height - (target.maxY - (screen.maxY - margin))
+    }
+    target.size.height = max(target.height, minimumWindowSize.height)
+    target = target.integral
+
+    let frame = CGRect(
+      x: target.minX - sidebarWidth, y: target.minY - margin,
+      width: sidebarWidth + target.width + margin, height: target.height + margin * 2)
+    let moved = abs(target.minX - window.minX) > 0.5 || abs(target.minY - window.minY) > 0.5
+      || abs(target.width - window.width) > 0.5 || abs(target.height - window.height) > 0.5
+    return FrameLayout(frame: frame, hole: target, windowFrame: moved ? target : nil)
+  }
+
+  /// The hole in the frame's own coordinates, with a top-left origin (SwiftUI).
+  public var holeInFrame: CGRect {
+    CGRect(x: hole.minX - frame.minX, y: frame.maxY - hole.maxY, width: hole.width, height: hole.height)
+  }
+}

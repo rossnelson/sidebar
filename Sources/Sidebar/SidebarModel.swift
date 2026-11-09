@@ -13,6 +13,18 @@ final class SidebarModel {
   var problem: Problem?
   /// The theme of the profile that owns Chrome's front window.
   var theme = ProfileTheme.standard
+  /// The space's name: the Chrome profile's name.
+  var spaceName = ""
+  var favorites: [Favorite] = []
+  /// Where Chrome's window sits inside the frame, top-left origin.
+  var frameHole = CGRect.zero
+
+  /// Opens the Cmd+T palette. Set by the app delegate.
+  @ObservationIgnored var openPalette: () -> Void = {}
+
+  var activeTab: ChromeTab? {
+    snapshot.tabs.first { $0.id == snapshot.activeTabID }
+  }
 
   enum Problem: Equatable {
     case automationDenied
@@ -52,8 +64,10 @@ final class SidebarModel {
         forWindowTitle: windowTitle, profiles: ChromeProfiles.parse(localState: localState))
     else { return }
     let next = base.appending(path: directory)
+    spaceName = ChromeProfiles.parse(localState: localState).first { $0.directory == directory }?.name ?? ""
     guard next != profileDirectory else { return }
     profileDirectory = next
+    loadFavorites()
     bookmarksModified = nil
     themeModified = nil
     refreshTheme()
@@ -94,7 +108,53 @@ final class SidebarModel {
     }
   }
 
+  // MARK: - Favorites
+
+  private var favoritesStore: FavoritesStore {
+    let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appending(path: "Sidebar")
+    return FavoritesStore(folder: folder, profileDirectory: profileDirectory.lastPathComponent)
+  }
+
+  func loadFavorites() {
+    favorites = favoritesStore.load()
+  }
+
+  func addFavorite(_ tab: ChromeTab) {
+    saveFavorites(FavoritesStore.adding(
+      Favorite(url: tab.url, title: tab.title.isEmpty ? tab.url : tab.title), to: favorites))
+  }
+
+  func removeFavorite(_ favorite: Favorite) {
+    saveFavorites(favorites.filter { $0.id != favorite.id })
+  }
+
+  private func saveFavorites(_ next: [Favorite]) {
+    guard next != favorites else { return }
+    favorites = next
+    do {
+      try favoritesStore.save(next)
+    } catch {
+      log.error("Favorites save failed: \(String(describing: error), privacy: .public)")
+    }
+  }
+
+  /// Switches to the favorite's tab when one is open, else opens it.
+  func openFavorite(_ favorite: Favorite) {
+    if let tab = favorite.matchingTab(in: snapshot.tabs) { return activate(tab) }
+    open(favorite.url)
+  }
+
+  func isActive(_ favorite: Favorite) -> Bool {
+    guard let activeTab else { return false }
+    return favorite.matchingTab(in: snapshot.tabs)?.id == activeTab.id
+  }
+
   // MARK: - Actions
+
+  func navigate(_ navigation: ChromeScripts.Navigation) {
+    perform { (chrome) throws(ChromeError) in try chrome.navigate(navigation) }
+  }
 
   func activate(_ tab: ChromeTab) {
     perform { (chrome) throws(ChromeError) in try chrome.activateTab(id: tab.id) }

@@ -4,6 +4,8 @@ import SidebarCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   static let sidebarWidth: CGFloat = 260
+  /// The frame's width on Chrome's other three sides.
+  static let margin: CGFloat = 8
 
   private let model = SidebarModel()
   private let tracker = ChromeWindowTracker()
@@ -15,7 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var commandT: HotKey?
   private var timers: [Timer] = []
   private var userHidden = false
-  private var windowFrame: CGRect?
+  private var chromeWindow: ChromeWindow?
+  private var windowFrame: CGRect? { chromeWindow?.frame }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     makeStatusItem()
@@ -43,17 +46,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
 
-    tracker.onChange = { [weak self] frame, title in
-      self?.model.updateProfile(windowTitle: title)
-      self?.layout(windowFrame: frame)
+    model.openPalette = { [weak self] in
+      guard let self else { return }
+      palette.show(over: windowFrame)
+    }
+    tracker.onChange = { [weak self] window in
+      self?.model.updateProfile(windowTitle: window?.title)
+      self?.layout(window)
     }
     tracker.start()
 
+    model.loadFavorites()
     model.refreshTheme()
     model.refreshBookmarks()
     model.refreshRecents()
     schedule(every: 1) { [weak self] in
-      guard let self, panel.isVisible else { return }
+      guard let self, panel.isVisible, chromeWindow?.isChromeFrontmost == true else { return }
       model.refreshTabs()
     }
     schedule(every: 5) { [weak self] in
@@ -68,23 +76,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: - Placement
 
-  private func layout(windowFrame frame: CGRect?) {
-    windowFrame = frame
-    guard let frame, !userHidden else { return panel.orderOut(nil) }
+  private func layout(_ window: ChromeWindow?) {
+    chromeWindow = window
+    guard let window, !userHidden else { return panel.orderOut(nil) }
 
-    let screen = NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main
-    let visible = screen?.visibleFrame ?? frame
-    let layout = AttachLayout.compute(window: frame, screen: visible, sidebarWidth: Self.sidebarWidth)
+    let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? NSScreen.main
+    let visible = screen?.visibleFrame ?? window.frame
+    let layout = FrameLayout.compute(
+      window: window.frame, screen: visible, sidebarWidth: Self.sidebarWidth, margin: Self.margin)
     if let moved = layout.windowFrame {
-      // Moving the window fires a move notification, which lays out again with room to spare.
+      // Moving the window fires a move notification, which lays out again.
       tracker.setCurrentWindowFrame(moved)
     }
     panel.appearance = model.theme.appearance
-    panel.setFrame(layout.panel, display: true)
-    if !panel.isVisible {
-      panel.orderFrontRegardless()
-      model.refreshTabs()
-    }
+    model.frameHole = layout.holeInFrame
+    panel.setFrame(layout.frame, display: true)
+    // Sit directly below Chrome's window: above other apps' windows, never over Chrome.
+    let wasVisible = panel.isVisible
+    panel.order(.below, relativeTo: window.windowNumber)
+    if !wasVisible { model.refreshTabs() }
   }
 
   private func updateCommandT() {
@@ -94,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func toggle() {
     userHidden.toggle()
-    layout(windowFrame: windowFrame)
+    layout(chromeWindow)
   }
 
   // MARK: - Menu bar

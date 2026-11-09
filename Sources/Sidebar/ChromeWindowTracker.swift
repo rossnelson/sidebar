@@ -2,10 +2,20 @@ import AppKit
 import ApplicationServices
 import SidebarCore
 
-/// Follows Chrome's focused browser window through the Accessibility API and
-/// reports its frame (Cocoa coordinates) and title, or `nil` when the sidebar should hide.
+/// Chrome's focused browser window, as the frame around it needs it.
+struct ChromeWindow: Equatable {
+  /// Cocoa coordinates.
+  var frame: CGRect
+  var title: String?
+  /// The window server's number, for ordering our frame next to it.
+  var windowNumber: Int
+  var isChromeFrontmost: Bool
+}
+
+/// Follows Chrome's focused browser window through the Accessibility API. Reports
+/// `nil` when there is no such window on the current screen and Space.
 final class ChromeWindowTracker {
-  var onChange: (_ frame: CGRect?, _ title: String?) -> Void = { _, _ in }
+  var onChange: (ChromeWindow?) -> Void = { _ in }
 
   private var observer: AXObserver?
   private var appElement: AXUIElement?
@@ -35,6 +45,8 @@ final class ChromeWindowTracker {
       NSWorkspace.didLaunchApplicationNotification,
       NSWorkspace.didTerminateApplicationNotification,
       NSWorkspace.activeSpaceDidChangeNotification,
+      NSWorkspace.didHideApplicationNotification,
+      NSWorkspace.didUnhideApplicationNotification,
     ] {
       center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
         MainActor.assumeIsolated { self?.update() }
@@ -49,18 +61,45 @@ final class ChromeWindowTracker {
       .runningApplications(withBundleIdentifier: ChromeScripts.bundleID).first
     else {
       detach()
-      return report(nil, title: nil)
+      return onChange(nil)
     }
     if observedPID != chrome.processIdentifier { attach(pid: chrome.processIdentifier) }
 
-    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == chrome.processIdentifier,
-      let appElement, let window = attachableWindow(of: appElement), let frame = frame(of: window)
+    guard !chrome.isHidden,
+      let appElement, let window = attachableWindow(of: appElement),
+      let axFrame = frameInAXCoordinates(of: window),
+      let number = Self.onScreenWindowNumber(pid: chrome.processIdentifier, axFrame: axFrame)
     else {
       currentWindow = nil
-      return report(nil, title: nil)
+      return onChange(nil)
     }
     currentWindow = window
-    report(frame, title: copy(window, kAXTitleAttribute))
+    onChange(ChromeWindow(
+      frame: ScreenCoordinates.flip(axFrame, primaryScreenHeight: Self.primaryScreenHeight),
+      title: copy(window, kAXTitleAttribute),
+      windowNumber: number,
+      isChromeFrontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier
+        == chrome.processIdentifier))
+  }
+
+  /// Finds the window server's number for a window by owner and bounds. `nil`
+  /// when it is not on screen, for example on another Space.
+  private static func onScreenWindowNumber(pid: pid_t, axFrame: CGRect) -> Int? {
+    let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+    guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+      return nil
+    }
+    for info in list {
+      guard (info[kCGWindowOwnerPID as String] as? pid_t) == pid,
+        (info[kCGWindowLayer as String] as? Int) == 0,
+        let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+        let rect = CGRect(dictionaryRepresentation: bounds),
+        abs(rect.minX - axFrame.minX) < 2, abs(rect.minY - axFrame.minY) < 2,
+        abs(rect.width - axFrame.width) < 2, abs(rect.height - axFrame.height) < 2
+      else { continue }
+      return info[kCGWindowNumber as String] as? Int
+    }
+    return nil
   }
 
   /// Moves and resizes the current Chrome window. `frame` is in Cocoa coordinates.
@@ -77,7 +116,6 @@ final class ChromeWindowTracker {
     }
   }
 
-  private func report(_ frame: CGRect?, title: String?) { onChange(frame, title) }
 
   // MARK: - Observer
 
@@ -132,12 +170,6 @@ final class ChromeWindowTracker {
       document: copy(window, kAXDocumentAttribute),
       size: frameInAXCoordinates(of: window)?.size ?? .zero
     )
-  }
-
-  private func frame(of window: AXUIElement) -> CGRect? {
-    frameInAXCoordinates(of: window).map {
-      ScreenCoordinates.flip($0, primaryScreenHeight: Self.primaryScreenHeight)
-    }
   }
 
   private func frameInAXCoordinates(of window: AXUIElement) -> CGRect? {

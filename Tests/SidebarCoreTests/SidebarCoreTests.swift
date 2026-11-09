@@ -248,3 +248,65 @@ import Testing
     #expect(gray.c < 1)
   }
 }
+
+@Suite struct ArcFrame {
+  let screen = CGRect(x: 0, y: 0, width: 1728, height: 1080)
+
+  @Test func `leaves a window that already fits`() {
+    let window = CGRect(x: 400, y: 100, width: 1000, height: 800)
+    let layout = FrameLayout.compute(window: window, screen: screen, sidebarWidth: 260, margin: 8)
+    #expect(layout.windowFrame == nil)
+    #expect(layout.frame == CGRect(x: 140, y: 92, width: 1268, height: 816))
+    #expect(layout.holeInFrame == CGRect(x: 260, y: 8, width: 1000, height: 800))
+  }
+
+  @Test func `insets a maximized window on every side`() {
+    let layout = FrameLayout.compute(window: screen, screen: screen, sidebarWidth: 260, margin: 8)
+    #expect(layout.windowFrame == CGRect(x: 260, y: 8, width: 1460, height: 1064))
+    #expect(layout.frame == screen)
+  }
+
+  @Test func `vivid gradient keeps the seed hue`() {
+    let hue = LCh(rgb: RGB(hex: 0xE040A0)).h
+    let palette = SpacePalette.make(seed: 0xE040A0, dark: false)
+    let start = LCh(rgb: palette.gradientStart), end = LCh(rgb: palette.gradientEnd)
+    #expect(abs(((start.h + end.h) / 2) - hue) < 6)
+    #expect(start.l > end.l)
+  }
+}
+
+@Suite struct Favorites {
+  let tabs = [
+    ChromeTab(id: 1, title: "Inbox", url: "https://mail.google.com/mail/u/0/#inbox"),
+    ChromeTab(id: 2, title: "PRs", url: "https://www.github.com/pulls"),
+  ]
+
+  @Test func `matches the exact URL first, then the site`() {
+    #expect(Favorite(url: "https://www.github.com/pulls", title: "").matchingTab(in: tabs)?.id == 2)
+    #expect(Favorite(url: "https://github.com/", title: "").matchingTab(in: tabs)?.id == 2)
+    #expect(Favorite(url: "https://mail.google.com/", title: "").matchingTab(in: tabs)?.id == 1)
+    #expect(Favorite(url: "https://news.ycombinator.com/", title: "").matchingTab(in: tabs) == nil)
+  }
+
+  @Test func `saves and loads one file per profile`() throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let work = FavoritesStore(folder: folder, profileDirectory: "Profile 1")
+    let favorites = [Favorite(url: "https://github.com", title: "GitHub")]
+    try work.save(favorites)
+    #expect(work.load() == favorites)
+    #expect(FavoritesStore(folder: folder, profileDirectory: "Profile 2").load().isEmpty)
+  }
+
+  @Test func `adding skips duplicates and stops at capacity`() {
+    let one = Favorite(url: "https://a.com", title: "A")
+    #expect(FavoritesStore.adding(one, to: [one]).count == 1)
+    let full = (0..<FavoritesStore.capacity).map { Favorite(url: "https://\($0).com", title: "") }
+    #expect(FavoritesStore.adding(one, to: full).count == FavoritesStore.capacity)
+  }
+
+  @Test func `navigation scripts target the active tab`() {
+    #expect(ChromeScripts.navigate(.back).contains("tell active tab of front window to go back"))
+    #expect(ChromeScripts.navigate(.reload).contains("to reload"))
+  }
+}

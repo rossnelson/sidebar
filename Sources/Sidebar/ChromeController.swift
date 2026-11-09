@@ -45,6 +45,10 @@ final class ChromeController {
     try run(ChromeScripts.activateTab(id: id))
   }
 
+  func navigate(_ navigation: ChromeScripts.Navigation) throws(ChromeError) {
+    try run(ChromeScripts.navigate(navigation))
+  }
+
   func closeTab(id: Int) throws(ChromeError) {
     try run(ChromeScripts.closeTab(id: id))
   }
