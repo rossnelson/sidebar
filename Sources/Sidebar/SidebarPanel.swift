@@ -23,7 +23,7 @@ final class SidebarPanel: NSPanel {
     isMovable = false
     animationBehavior = .none
 
-    let host = ClickThroughHostingView(rootView: FrameView(model: model))
+    let host = ClickThroughHostingView(rootView: AnyView(FrameView(model: model)))
     // The window's size comes from Chrome's window, never from the SwiftUI content.
     host.sizingOptions = []
     contentView = host
@@ -51,7 +51,7 @@ final class PeekPanel: NSPanel {
     isMovable = false
     animationBehavior = .none
 
-    let host = ClickThroughHostingView(rootView: PeekView(model: model))
+    let host = ClickThroughHostingView(rootView: AnyView(PeekView(model: model)))
     host.sizingOptions = []
     contentView = host
   }
@@ -61,7 +61,8 @@ final class PeekPanel: NSPanel {
 }
 
 /// A hosting view that acts on the first click. The panels never become key,
-/// so every click is a "first" click.
-final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
+/// so every click is a "first" click. Not generic: a generic NSHostingView
+/// subclass crashes the Swift 6.3 release compiler (signal 11 in its deinit).
+final class ClickThroughHostingView: NSHostingView<AnyView> {
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
