@@ -93,6 +93,7 @@ public enum ChromeScripts {
     """
 
   /// Switches to a tab in any window and brings that window to the front.
+  // Chrome 157 reports tab IDs as text; older versions as integers. Compare as text.
   public static func activateTab(windowID: Int, tabID: Int) -> String {
     """
     tell application id "\(bundleID)"
@@ -100,7 +101,7 @@ public enum ChromeScripts {
       set i to 0
       repeat with t in tabs of w
         set i to i + 1
-        if (id of t) is \(tabID) then
+        if ((id of t) as text) is "\(tabID)" then
           set active tab index of w to i
           exit repeat
         end if
@@ -118,7 +119,7 @@ public enum ChromeScripts {
       set i to 0
       repeat with t in tabs of w
         set i to i + 1
-        if (id of t) is \(id) then
+        if ((id of t) as text) is "\(id)" then
           set active tab index of w to i
           exit repeat
         end if
@@ -131,7 +132,7 @@ public enum ChromeScripts {
     """
     tell application id "\(bundleID)"
       repeat with t in tabs of front window
-        if (id of t) is \(id) then
+        if ((id of t) as text) is "\(id)" then
           close t
           exit repeat
         end if

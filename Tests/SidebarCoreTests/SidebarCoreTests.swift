@@ -182,3 +182,15 @@ import Testing
     #expect(parsed.map(\.tab.title) == ["A", "B"])
   }
 }
+
+@Suite struct ScriptShape {
+  // Chrome 157 returns tab IDs as text, so an integer comparison never matches.
+  @Test func `tab scripts compare IDs as text`() {
+    for script in [
+      ChromeScripts.activateTab(id: 42), ChromeScripts.closeTab(id: 42),
+      ChromeScripts.activateTab(windowID: 1, tabID: 42),
+    ] {
+      #expect(script.contains(#"((id of t) as text) is "42""#))
+    }
+  }
+}
