@@ -28,6 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var settleUntil = Date.distantPast
   private var settleTimer: Timer?
   private var clickMonitor: Any?
+  private var moveMonitors: [Any] = []
+  /// Where Chrome's window sits, in screen coordinates.
+  private var holeRect: CGRect?
   private var windowFrame: CGRect? { chromeWindow?.frame }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -78,6 +81,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] _ in
       MainActor.assumeIsolated { self?.raiseFrameAboveChrome() }
     }
+    // The frame sits above Chrome, so it must let the mouse through over Chrome's
+    // window. Transparent pixels alone do not: the frame would catch Chrome's clicks.
+    let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
+    if let global = NSEvent.addGlobalMonitorForEvents(matching: moves, handler: { [weak self] _ in
+      MainActor.assumeIsolated { self?.updateMousePassThrough() }
+    }) { moveMonitors.append(global) }
+    if let local = NSEvent.addLocalMonitorForEvents(matching: moves, handler: { [weak self] event in
+      MainActor.assumeIsolated { self?.updateMousePassThrough() }
+      return event
+    }) { moveMonitors.append(local) }
 
     model.loadFavorites()
     model.refreshTheme()
@@ -121,6 +134,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.frameHole = layout.holeInFrame
     panel.setFrame(layout.frame, display: true)
     frameRect = layout.frame
+    holeRect = layout.hole
+    updateMousePassThrough()
     // Sit directly above Chrome's window, so the border covers Chrome's shadow.
     // The hole is transparent and matches Chrome's corners, so Chrome stays visible
     // and clickable. Other apps' windows still cover both.
@@ -132,6 +147,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func updateCommandT() {
     let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     commandT?.isEnabled = front == ChromeScripts.bundleID
+  }
+
+  /// Lets the mouse through to Chrome while the pointer is over Chrome's window.
+  private func updateMousePassThrough() {
+    let overChrome = holeRect?.contains(NSEvent.mouseLocation) ?? false
+    if panel.ignoresMouseEvents != overChrome { panel.ignoresMouseEvents = overChrome }
   }
 
   private func raiseFrameAboveChrome() {
