@@ -156,6 +156,10 @@ final class PaletteController: NSObject, NSWindowDelegate {
       forwardToChrome(event)
       return true
     }
+    if let action = Self.editAction(for: event) {
+      // A menu-bar app has no Edit menu, so send the edit command to the text field directly.
+      return NSApp.sendAction(action, to: nil, from: nil)
+    }
     let control = event.modifierFlags.contains(.control)
     switch (event.keyCode, control) {
     case (125, _), (45, true): state.move(1)  // ↓, ⌃N
@@ -165,6 +169,22 @@ final class PaletteController: NSObject, NSWindowDelegate {
     default: return false
     }
     return true
+  }
+}
+
+extension PaletteController {
+  /// ⌘X, ⌘C, ⌘V, ⌘A, ⌘Z and ⇧⌘Z, which an Edit menu would normally handle.
+  static func editAction(for event: NSEvent) -> Selector? {
+    let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+    switch (event.keyCode, flags) {
+    case (7, .command): return #selector(NSText.cut(_:))
+    case (8, .command): return #selector(NSText.copy(_:))
+    case (9, .command): return #selector(NSText.paste(_:))
+    case (0, .command): return #selector(NSText.selectAll(_:))
+    case (6, .command): return Selector(("undo:"))
+    case (6, [.command, .shift]): return Selector(("redo:"))
+    default: return nil
+    }
   }
 }
 
