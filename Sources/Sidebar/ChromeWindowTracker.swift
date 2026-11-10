@@ -65,10 +65,8 @@ final class ChromeWindowTracker {
     }
     if observedPID != chrome.processIdentifier { attach(pid: chrome.processIdentifier) }
 
-    guard !chrome.isHidden,
-      let appElement, let window = attachableWindow(of: appElement),
-      let axFrame = frameInAXCoordinates(of: window),
-      let number = Self.onScreenWindowNumber(pid: chrome.processIdentifier, axFrame: axFrame)
+    guard !chrome.isHidden, let appElement,
+      let (window, axFrame, number) = attachableWindow(of: appElement, pid: chrome.processIdentifier)
     else {
       currentWindow = nil
       return onChange(nil)
@@ -183,10 +181,20 @@ final class ChromeWindowTracker {
 
   // MARK: - Reading windows
 
-  private func attachableWindow(of app: AXUIElement) -> AXUIElement? {
-    for attribute in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
-      if let window: AXUIElement = copy(app, attribute), WindowRules.isAttachable(attributes(of: window)) {
-        return window
+  /// The browser window to frame: the focused window, else the main window, else
+  /// the frontmost browser window. A floating window, such as a picture-in-picture
+  /// video, can take focus; the frame then stays on the browser window behind it.
+  /// A window counts only when it is on screen at the normal window level.
+  private func attachableWindow(of app: AXUIElement, pid: pid_t) -> (AXUIElement, CGRect, Int)? {
+    let preferred = [kAXFocusedWindowAttribute, kAXMainWindowAttribute].compactMap {
+      copy(app, $0) as AXUIElement?
+    }
+    let all: [AXUIElement] = copy(app, kAXWindowsAttribute) ?? []
+    for window in preferred + all where WindowRules.isAttachable(attributes(of: window)) {
+      if let frame = frameInAXCoordinates(of: window),
+        let number = Self.onScreenWindowNumber(pid: pid, axFrame: frame)
+      {
+        return (window, frame, number)
       }
     }
     return nil
