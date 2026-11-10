@@ -163,17 +163,27 @@ public enum PaletteSearch {
       }
     }
     scored.sort { $0.score != $1.score ? $0.score > $1.score : $0.order < $1.order }
-    var ranked = Array(dedupe(scored.map(\.result)).prefix(limit))
+    let ranked = Array(dedupe(scored.map(\.result)).prefix(limit))
 
+    // A URL opens first and search goes last. Otherwise search comes first,
+    // after only the results that match the typed text exactly.
     let search = PaletteResult(
       id: "search", kind: .search, title: "Search Google for “\(text)”",
       url: Destination.searchURL(for: text))
     if Destination.looksLikeURL(text) {
       let url = Destination.url(for: text)
-      ranked.insert(PaletteResult(id: "url", kind: .url, title: "Open \(url)", url: url), at: 0)
+      return [PaletteResult(id: "url", kind: .url, title: "Open \(url)", url: url)] + ranked + [search]
     }
-    ranked.append(search)
-    return ranked
+    let exact = ranked.filter { isExactMatch(text, $0) }
+    return exact + [search] + ranked.filter { !isExactMatch(text, $0) }
+  }
+
+  /// The title, or the URL without scheme and `www.`, equals the text, ignoring case.
+  static func isExactMatch(_ text: String, _ result: PaletteResult) -> Bool {
+    let text = text.lowercased()
+    var url = matchableURL(result.url).lowercased()
+    if url.hasSuffix("/") { url.removeLast() }
+    return result.title.lowercased() == text || url == text
   }
 
   /// Keeps the first result for each URL, so an open tab hides the same bookmark or history page.

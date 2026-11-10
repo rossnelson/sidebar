@@ -136,12 +136,17 @@ import Testing
     HistoryItem(id: 1, title: "Swift Testing docs", url: "https://developer.apple.com/documentation/testing", lastVisit: .now),
   ]
 
+  func results(_ query: String) -> [PaletteResult] {
+    PaletteSearch.results(query: query, tabs: tabs, bookmarks: bookmarks, history: history)
+  }
+
+  /// Matches only, without the search row.
   func titles(_ query: String) -> [String] {
-    PaletteSearch.results(query: query, tabs: tabs, bookmarks: bookmarks, history: history).map(\.title)
+    results(query).filter { $0.kind != .search }.map(\.title)
   }
 
   @Test func `an open tab ranks first and hides the same bookmark`() {
-    let results = PaletteSearch.results(query: "pull", tabs: tabs, bookmarks: bookmarks, history: history)
+    let results = results("pull").filter { $0.kind != .search }
     #expect(results.first?.kind == .tab(windowID: 2, tabID: 20))
     #expect(!results.contains { $0.id == "bookmark-b1" })
   }
@@ -156,11 +161,29 @@ import Testing
     #expect(!titles("swift gmail").contains("Swift Testing docs"))
   }
 
-  @Test func `search is always last and a URL comes first`() {
-    let results = PaletteSearch.results(query: "example.com", tabs: tabs, bookmarks: bookmarks, history: history)
+  @Test func `a URL comes first and search last`() {
+    let results = results("example.com")
     #expect(results.first?.kind == .url)
     #expect(results.first?.url == "https://example.com")
     #expect(results.last?.kind == .search)
+  }
+
+  @Test func `search comes first when nothing matches exactly`() {
+    let results = results("pull")
+    #expect(results.first?.kind == .search)
+    #expect(results.dropFirst().first?.kind == .tab(windowID: 2, tabID: 20))
+  }
+
+  @Test func `an exact title match comes before search`() {
+    #expect(results("github").map(\.kind).prefix(2) == [.bookmark, .search])
+    #expect(results("Hacker News").first?.title == "Hacker News")
+  }
+
+  @Test func `an exact URL match comes before search`() {
+    let tab = WindowTab(windowID: 1, tab: ChromeTab(id: 30, title: "Home", url: "https://www.example.org/"))
+    let results = PaletteSearch.results(query: "localhost", tabs: [tab], bookmarks: [], history: [])
+    #expect(results.first?.kind == .url)
+    #expect(PaletteSearch.isExactMatch("example.org", PaletteResult(id: "t", kind: .bookmark, title: "Home", url: tab.tab.url)))
   }
 
   @Test func `empty query lists tabs then history`() {
