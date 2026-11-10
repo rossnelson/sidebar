@@ -12,9 +12,48 @@ window and puts a sidebar on the left with:
 - back, forward and reload buttons, and an address pill that opens the palette
 
 The frame color comes from the theme color of the Chrome profile that owns the
-window, so each profile gets its own look. Chrome itself is not changed: Sidebar
-moves and resizes Chrome's window to make room, and reads Chrome's profile files
-to show bookmarks, history and theme.
+window, so each profile gets its own look.
+
+![Sidebar is a separate app next to an unmodified Chrome. It talks to Chrome only through macOS Accessibility, Apple Events, keystrokes and read-only file reads.](docs/how-it-works.svg)
+
+## A sidecar, not a wrapper
+
+Sidebar does not contain, embed or modify Chrome. It is a separate app that
+draws its own window around Chrome's window. You keep using the real Google
+Chrome that you installed from Google.
+
+**Chrome stays as it is:**
+
+- The Chrome app is not patched, re-signed, replaced or relaunched by Sidebar.
+- Chrome keeps updating itself through Google's updater, on Google's schedule.
+- Chrome's sandbox, site isolation, Safe Browsing, extensions, profiles and sync work as before.
+- If you quit or delete Sidebar, Chrome works as normal. There is nothing in Chrome to undo.
+
+**How Sidebar talks to Chrome.** Sidebar uses only public macOS interfaces.
+macOS asks you for permission first, and you can turn each one off in
+System Settings → Privacy & Security.
+
+| Channel | What Sidebar does with it | Permission |
+| --- | --- | --- |
+| Accessibility | Reads the window's position, size and title. Moves and resizes the window. | Accessibility |
+| Apple Events (Chrome's AppleScript) | Lists, switches, opens and closes tabs. Back, forward, reload. Reads the current URL. | Automation → Google Chrome |
+| Keystrokes | Passes on a Chrome shortcut that you press while the ⌘T palette is open. | Accessibility |
+| Files | Reads `Bookmarks`, `AccountBookmarks`, `Preferences` and `Local State`. Copies `History` to a temporary file to read it, then deletes the copy. | None (your own files) |
+
+**Sidebar never:**
+
+- installs a Chrome extension
+- injects code or loads libraries into Chrome
+- adds launch flags or opens a remote debugging port
+- runs JavaScript in your pages (it does not use Chrome's "Allow JavaScript from Apple Events" setting)
+- writes to Chrome's profile files
+
+**Network.** Sidebar shows favicons from Google's public favicon service
+(`google.com/s2/favicons`), which receives each site's domain. Sidebar makes
+no other network requests. Web searches from the palette open in Chrome.
+
+The code that does all of this is short. See `Sources/Sidebar/ChromeController.swift`,
+`Sources/Sidebar/ChromeWindowTracker.swift` and `Sources/SidebarCore`.
 
 ## Requirements
 
