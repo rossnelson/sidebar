@@ -123,6 +123,17 @@ import Testing
   }
 }
 
+@Suite struct TabStripRule {
+  @Test func `a window without a tab strip gets no sidebar`() {
+    let popup = WindowAttributes(
+      role: "AXWindow", subrole: "AXStandardWindow", size: CGSize(width: 800, height: 600), hasTabStrip: false)
+    #expect(!WindowRules.isAttachable(popup))
+    var browser = popup
+    browser.hasTabStrip = true
+    #expect(WindowRules.isAttachable(browser))
+  }
+}
+
 @Suite struct PaletteRanking {
   let tabs = [
     WindowTab(windowID: 1, tab: ChromeTab(id: 10, title: "Inbox (3) - Gmail", url: "https://mail.google.com/mail/u/0/")),

@@ -208,8 +208,39 @@ final class ChromeWindowTracker {
       isMinimized: copy(window, kAXMinimizedAttribute) ?? false,
       isFullScreen: copy(window, "AXFullScreen") ?? false,
       document: copy(window, kAXDocumentAttribute),
-      size: frameInAXCoordinates(of: window)?.size ?? .zero
+      size: frameInAXCoordinates(of: window)?.size ?? .zero,
+      hasTabStrip: hasTabStrip(window)
     )
+  }
+
+  /// Windows already seen with a tab strip. A window keeps its strip, so a
+  /// positive answer is safe to keep; a negative one is checked again, because
+  /// a new window may not have built its strip yet.
+  private var tabbedWindows: [AXUIElement] = []
+
+  /// Looks for an `AXTabGroup` in the window's own interface (the tab strip sits
+  /// about five levels down). It does not look inside web pages, where a page's
+  /// own tabs would also show as `AXTabGroup`.
+  private func hasTabStrip(_ window: AXUIElement) -> Bool {
+    if tabbedWindows.contains(where: { CFEqual($0, window) }) { return true }
+    var level = [window]
+    for _ in 0..<7 {
+      var next: [AXUIElement] = []
+      for element in level {
+        for child: AXUIElement in copy(element, kAXChildrenAttribute) ?? [] {
+          switch copy(child, kAXRoleAttribute) as String? {
+          case "AXTabGroup":
+            tabbedWindows = Array(([window] + tabbedWindows).prefix(16))
+            return true
+          case "AXWebArea", "AXScrollArea": continue
+          default: next.append(child)
+          }
+        }
+      }
+      if next.isEmpty { break }
+      level = next
+    }
+    return false
   }
 
   private func frameInAXCoordinates(of window: AXUIElement) -> CGRect? {

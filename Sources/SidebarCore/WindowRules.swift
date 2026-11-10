@@ -11,10 +11,13 @@ public struct WindowAttributes: Sendable, Equatable {
   /// `AXDocument`. Chrome puts the page URL here; DevTools windows carry `devtools://`.
   public var document: String?
   public var size: CGSize
+  /// A tabbed browser window has a tab strip. Extension pop-ups (such as a
+  /// password manager's login window) and app windows do not.
+  public var hasTabStrip: Bool
 
   public init(
     role: String?, subrole: String?, isModal: Bool = false, isMinimized: Bool = false,
-    isFullScreen: Bool = false, document: String? = nil, size: CGSize
+    isFullScreen: Bool = false, document: String? = nil, size: CGSize, hasTabStrip: Bool = true
   ) {
     self.role = role
     self.subrole = subrole
@@ -23,6 +26,7 @@ public struct WindowAttributes: Sendable, Equatable {
     self.isFullScreen = isFullScreen
     self.document = document
     self.size = size
+    self.hasTabStrip = hasTabStrip
   }
 }
 
@@ -36,7 +40,7 @@ public enum WindowRules {
   public static func isAttachable(_ window: WindowAttributes) -> Bool {
     guard window.role == "AXWindow" else { return false }
     if let subrole = window.subrole, rejectedSubroles.contains(subrole) { return false }
-    if window.isModal || window.isMinimized || window.isFullScreen { return false }
+    if window.isModal || window.isMinimized || window.isFullScreen || !window.hasTabStrip { return false }
     if let document = window.document, devToolsPrefixes.contains(where: document.hasPrefix) {
       return false
     }
