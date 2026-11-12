@@ -83,11 +83,13 @@ public struct FavoritesStore: Sendable {
   }
 }
 
-/// Arc's "Clear": the tabs to close, which are all but the active tab and
-/// the tabs that favorites stand for.
+/// Arc's "Clear": the tabs to close, which are all but the active tab, the
+/// tabs that favorites stand for, and the tabs in `extra` (pinned tabs).
 public enum TabCleanup {
-  public static func idsToClose(in tabs: [ChromeTab], activeID: Int?, favorites: [Favorite]) -> [Int] {
-    let kept = Set(favorites.compactMap { $0.matchingTab(in: tabs)?.id } + [activeID].compactMap { $0 })
+  public static func idsToClose(
+    in tabs: [ChromeTab], activeID: Int?, favorites: [Favorite], keeping extra: Set<Int> = []
+  ) -> [Int] {
+    let kept = extra.union(favorites.compactMap { $0.matchingTab(in: tabs)?.id } + [activeID].compactMap { $0 })
     return tabs.map(\.id).filter { !kept.contains($0) }
   }
 }

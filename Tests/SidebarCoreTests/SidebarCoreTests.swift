@@ -550,3 +550,79 @@ private typealias M = KeyRouting.Modifiers
     #expect(script.contains(#"{"7", "9"}"#))
   }
 }
+
+@Suite struct PinnedTabs {
+  let docs = Favorite(url: "https://docs.swift.org/", title: "Docs")
+  let mail = Favorite(url: "https://mail.google.com/", title: "Mail")
+
+  @Test func `a remembered tab stays the pin's tab after it navigates away`() {
+    let tabs = [ChromeTab(id: 5, title: "Other", url: "https://swift.org/blog")]
+    #expect(PinMatching.match(pins: [docs], tabs: tabs, remembered: [docs.id: 5]) == [docs.id: 5])
+  }
+
+  @Test func `without a remembered tab only the exact URL matches, one tab per pin`() {
+    let tabs = [
+      ChromeTab(id: 1, title: "Docs", url: "https://docs.swift.org/"),
+      ChromeTab(id: 2, title: "Mail", url: "https://mail.google.com/mail/u/0"),
+    ]
+    let twin = Favorite(url: "https://docs.swift.org/", title: "Docs again")
+    let result = PinMatching.match(pins: [docs, mail, twin], tabs: tabs, remembered: [docs.id: 99])
+    #expect(result == [docs.id: 1])
+  }
+
+  @Test func `clear keeps pinned tabs`() {
+    let tabs = [ChromeTab(id: 1, title: "", url: "https://a.com"), ChromeTab(id: 2, title: "", url: "https://b.com")]
+    #expect(TabCleanup.idsToClose(in: tabs, activeID: nil, favorites: [], keeping: [2]) == [1])
+  }
+}
+
+@Suite struct Archive {
+  @Test func `archives only unused tabs that are not kept`() {
+    let now = Date(timeIntervalSince1970: 100_000)
+    let tabs = (1...4).map { ChromeTab(id: $0, title: "", url: "https://\($0).com") }
+    let lastActive: [Int: Date] = [
+      1: now.addingTimeInterval(-13 * 3600), 2: now.addingTimeInterval(-3600), 3: now.addingTimeInterval(-20 * 3600),
+    ]
+    #expect(AutoArchive.idsToArchive(tabs: tabs, lastActive: lastActive, keep: [3], after: 12 * 3600, now: now) == [1])
+    #expect(AutoArchive.idsToArchive(tabs: tabs, lastActive: lastActive, keep: [], after: 0, now: now).isEmpty)
+  }
+
+  @Test func `newest first, one entry per URL, no Chrome pages`() {
+    let old = ArchivedTab(url: "https://a.com", title: "A old", closedAt: .distantPast)
+    let new = ArchivedTab(url: "https://a.com", title: "A new", closedAt: .now)
+    let page = ArchivedTab(url: "chrome://newtab/", title: "New Tab", closedAt: .now)
+    #expect(ArchiveStore.adding([new, page], to: [old]) == [new])
+  }
+
+  @Test func `saves and loads`() throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let store = ArchiveStore(folder: folder, profileDirectory: "Default")
+    let tabs = [ArchivedTab(url: "https://a.com", title: "A", closedAt: Date(timeIntervalSince1970: 1_700_000_000))]
+    try store.save(tabs)
+    #expect(store.load() == tabs)
+  }
+}
+
+@Suite struct PaletteCommands {
+  let commands = [
+    PaletteCommand(id: "clear", title: "Clear tabs", symbol: "arrow.down"),
+    PaletteCommand(id: "copy", title: "Copy URL", symbol: "link"),
+  ]
+
+  @Test func `a bare > lists every command in order`() {
+    let results = PaletteSearch.results(query: ">", tabs: [], bookmarks: [], history: [], commands: commands)
+    #expect(results.map(\.kind) == [.command("clear"), .command("copy")])
+  }
+
+  @Test func `text after > filters commands and nothing else`() {
+    let tabs = [WindowTab(windowID: 1, tab: ChromeTab(id: 1, title: "Copy editor", url: "https://copy.com"))]
+    let results = PaletteSearch.results(query: "> copy", tabs: tabs, bookmarks: [], history: [], commands: commands)
+    #expect(results.map(\.kind) == [.command("copy")])
+  }
+
+  @Test func `archived tabs are found by search`() {
+    let archived = [ArchivedTab(url: "https://swift.org/blog", title: "Swift Blog", closedAt: .now)]
+    let results = PaletteSearch.results(query: "swift blog", tabs: [], bookmarks: [], history: [], archived: archived)
+    #expect(results.contains { $0.kind == .archived })
+  }
+}

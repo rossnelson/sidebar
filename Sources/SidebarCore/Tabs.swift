@@ -177,6 +177,20 @@ public enum ChromeScripts {
       """
   }
 
+  /// Loads `url` in one tab of the front window, for a pinned tab going home.
+  public static func setURL(tabID: Int, url: String) -> String {
+    """
+    tell application id "\(bundleID)"
+      repeat with t in tabs of front window
+        if ((id of t) as text) is "\(tabID)" then
+          set URL of t to "\(escape(url))"
+          exit repeat
+        end if
+      end repeat
+    end tell
+    """
+  }
+
   public enum Navigation: String, Sendable { case back = "go back", forward = "go forward", reload }
 
   public static func navigate(_ navigation: Navigation) -> String {

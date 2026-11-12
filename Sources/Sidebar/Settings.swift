@@ -16,6 +16,11 @@ final class Preferences {
     }
   }
 
+  /// Hours a tab can stay unused before Sidebar archives it. `0` turns auto-archive off.
+  var archiveAfterHours: Int = UserDefaults.standard.object(forKey: "archiveAfterHours") as? Int ?? 12 {
+    didSet { UserDefaults.standard.set(archiveAfterHours, forKey: "archiveAfterHours") }
+  }
+
   /// Called after any change, so the app can register the new hotkeys.
   @ObservationIgnored var onChange: () -> Void = {}
 
@@ -65,7 +70,9 @@ final class SettingsWindowController {
       backing: .buffered, defer: false)
     window.title = "Sidebar Settings"
     window.isReleasedWhenClosed = false
-    window.contentView = NSHostingView(rootView: SettingsView(preferences: preferences))
+    let host = NSHostingView(rootView: SettingsView(preferences: preferences))
+    window.contentView = host
+    window.setContentSize(host.fittingSize)
     return window
   }
 }
@@ -88,6 +95,19 @@ struct SettingsView: View {
           .foregroundStyle(.secondary)
         LabeledContent("Search tabs and the web", value: "⌘T")
         LabeledContent("Collapse or expand sidebar", value: "⌃⌘S")
+      }
+      Section("Tabs") {
+        Picker("Archive unused tabs after", selection: $preferences.archiveAfterHours) {
+          Text("Never").tag(0)
+          Text("1 hour").tag(1)
+          Text("12 hours").tag(12)
+          Text("1 day").tag(24)
+          Text("1 week").tag(168)
+        }
+        Text("Sidebar closes a tab that you have not opened for this time. Pinned tabs, the tabs of favorites and the active tab stay open. Search the ⌘T palette to get an archived tab back.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
     .formStyle(.grouped)

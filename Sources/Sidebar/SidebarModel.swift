@@ -16,6 +16,12 @@ final class SidebarModel {
   /// The space's name: the Chrome profile's name.
   var spaceName = ""
   var favorites: [Favorite] = []
+  /// The space's pinned tabs. Their open tabs show in the pinned section, not with the other tabs.
+  var pins: [Favorite] = []
+  /// Tabs that Sidebar closed, newest first, for the palette.
+  var archived: [ArchivedTab] = []
+  /// `1` when the last space change went to a later space, `-1` to an earlier one.
+  var spaceStep = 1
   /// Every Chrome profile, for the space switcher.
   var spaces: [Space] = []
   /// The folder name of the current space's profile, for example `Profile 1`.
@@ -43,6 +49,13 @@ final class SidebarModel {
   @ObservationIgnored var showPreview: (ChromeTab?, CGRect) -> Void = { _, _ in }
   /// The preview card is on screen, so the next row shows its card at once.
   @ObservationIgnored var isPreviewing = false
+  /// Copies the active tab's URL. Set by the app delegate.
+  @ObservationIgnored var copyURL: () -> Void = {}
+  /// Each pin's open tab, kept while that tab navigates away from the pin.
+  @ObservationIgnored private var pinTabIDs: [UUID: Int] = [:]
+  /// When each tab was last the active tab, for auto-archive.
+  @ObservationIgnored private var lastActive: [Int: Date] = [:]
+
   /// Opens the Settings window. Set by the app delegate.
   @ObservationIgnored var openSettings: () -> Void = {}
   /// Shows a short message over Chrome. Set by the app delegate.
@@ -77,6 +90,8 @@ final class SidebarModel {
   func refreshTabs() {
     do {
       let next = try chrome.frontWindowTabs()
+      pinTabIDs = PinMatching.match(pins: pins, tabs: next.tabs, remembered: pinTabIDs)
+      noteActivity(next)
       if next != snapshot { snapshot = next }
       if problem == .automationDenied { problem = nil }
     } catch .notAuthorized {
@@ -100,10 +115,17 @@ final class SidebarModel {
     let next = base.appending(path: directory)
     let name = ChromeProfiles.parse(localState: localState).first { $0.directory == directory }?.name ?? ""
     if name != spaceName { spaceName = name }
-    if directory != spaceDirectory { spaceDirectory = directory }
+    if directory != spaceDirectory {
+      let order = spaces.map(\.directory)
+      if let from = order.firstIndex(of: spaceDirectory), let to = order.firstIndex(of: directory) {
+        spaceStep = to > from ? 1 : -1
+      }
+      spaceDirectory = directory
+    }
     guard next != profileDirectory else { return }
     profileDirectory = next
     loadFavorites()
+    pinTabIDs = [:]
     bookmarksModified = nil
     themeModified = nil
     refreshTheme()
@@ -179,8 +201,20 @@ final class SidebarModel {
     return FavoritesStore(folder: folder, profileDirectory: profileDirectory.lastPathComponent)
   }
 
+  private var pinsStore: FavoritesStore {
+    FavoritesStore(file: favoritesStore.file.deletingLastPathComponent()
+      .appending(path: "pins-\(profileDirectory.lastPathComponent).json"))
+  }
+
+  private var archiveStore: ArchiveStore {
+    ArchiveStore(folder: favoritesStore.file.deletingLastPathComponent(), profileDirectory: profileDirectory.lastPathComponent)
+  }
+
+  /// Loads the space's favorites, pins and archive.
   func loadFavorites() {
     favorites = favoritesStore.load()
+    pins = pinsStore.load()
+    archived = archiveStore.load()
   }
 
   func addFavorite(_ tab: ChromeTab) {
@@ -210,6 +244,152 @@ final class SidebarModel {
     guard let index = spaces.firstIndex(where: { $0.directory == spaceDirectory }) else { return nil }
     let next = index + step
     return spaces.indices.contains(next) ? spaces[next] : nil
+  }
+
+  // MARK: - Pins
+
+  /// Each pin's open tab ID, from the last tab refresh.
+  var pinnedTabIDs: [UUID: Int] {
+    PinMatching.match(pins: pins, tabs: snapshot.tabs, remembered: pinTabIDs)
+  }
+
+  /// The tabs that are not pinned, for the tab list.
+  var unpinnedTabs: [ChromeTab] {
+    let pinned = Set(pinnedTabIDs.values)
+    return snapshot.tabs.filter { !pinned.contains($0.id) }
+  }
+
+  func pin(_ tab: ChromeTab) {
+    guard !pins.contains(where: { $0.url == tab.url }) else { return }
+    let pin = Favorite(url: tab.url, title: tab.title.isEmpty ? tab.url : tab.title)
+    pinTabIDs[pin.id] = tab.id
+    savePins(pins + [pin])
+  }
+
+  func unpin(_ pin: Favorite) {
+    pinTabIDs[pin.id] = nil
+    savePins(pins.filter { $0.id != pin.id })
+  }
+
+  func movePin(_ id: UUID, to target: UUID?) {
+    savePins(FavoritesStore.moving(id, to: target, in: pins))
+  }
+
+  /// Switches to the pin's tab, or opens the pin in a new tab that it then owns.
+  func openPin(_ pin: Favorite) {
+    if let id = pinnedTabIDs[pin.id], let tab = snapshot.tabs.first(where: { $0.id == id }) {
+      return activate(tab)
+    }
+    open(pin.url)
+    if let id = snapshot.activeTabID { pinTabIDs[pin.id] = id }
+  }
+
+  /// Takes the pin's tab back to the pin's own URL.
+  func resetPin(_ pin: Favorite) {
+    guard let id = pinnedTabIDs[pin.id] else { return }
+    perform { (chrome) throws(ChromeError) in try chrome.setURL(tabID: id, url: pin.url) }
+    refreshTabs()
+  }
+
+  /// Closes the pin's tab. The pin stays.
+  func closePinnedTab(_ pin: Favorite) {
+    guard let id = pinnedTabIDs[pin.id], let tab = snapshot.tabs.first(where: { $0.id == id }) else { return }
+    close(tab)
+  }
+
+  private func savePins(_ next: [Favorite]) {
+    guard next != pins else { return }
+    pins = next
+    do {
+      try pinsStore.save(next)
+    } catch {
+      log.error("Pins save failed: \(String(describing: error), privacy: .public)")
+    }
+  }
+
+  // MARK: - Archive
+
+  /// Tabs that Clear and auto-archive keep open.
+  private var keptTabIDs: Set<Int> {
+    Set(pinnedTabIDs.values).union(favorites.compactMap { $0.matchingTab(in: snapshot.tabs)?.id })
+  }
+
+  private func noteActivity(_ next: TabSnapshot) {
+    let now = Date()
+    for tab in next.tabs where lastActive[tab.id] == nil { lastActive[tab.id] = now }
+    if let active = next.activeTabID { lastActive[active] = now }
+  }
+
+  /// Closes the tabs that no one has used for `after` seconds and keeps them in the archive.
+  func archiveStaleTabs(after: TimeInterval) {
+    var keep = keptTabIDs
+    if let active = snapshot.activeTabID { keep.insert(active) }
+    let ids = AutoArchive.idsToArchive(
+      tabs: snapshot.tabs, lastActive: lastActive, keep: keep, after: after, now: Date())
+    guard !ids.isEmpty else { return }
+    closeAndArchive(ids)
+  }
+
+  private func closeAndArchive(_ ids: [Int]) {
+    let now = Date()
+    let closing = snapshot.tabs.filter { ids.contains($0.id) }
+      .map { ArchivedTab(url: $0.url, title: $0.title.isEmpty ? $0.url : $0.title, closedAt: now) }
+    perform { (chrome) throws(ChromeError) in try chrome.closeTabs(ids: ids) }
+    refreshTabs()
+    archived = ArchiveStore.adding(closing, to: archived)
+    do {
+      try archiveStore.save(archived)
+    } catch {
+      log.error("Archive save failed: \(String(describing: error), privacy: .public)")
+    }
+  }
+
+  /// Opens an archived tab and takes it out of the archive.
+  func restore(url: String) {
+    open(url)
+    archived.removeAll { $0.url == url }
+    try? archiveStore.save(archived)
+  }
+
+  // MARK: - Commands
+
+  /// The palette's commands, after `>`.
+  var commands: [PaletteCommand] {
+    var list = [
+      PaletteCommand(id: "clear", title: "Clear Tabs", symbol: "arrow.down.to.line"),
+      PaletteCommand(id: "pin", title: "Pin Current Tab", symbol: "pin"),
+      PaletteCommand(id: "favorite", title: "Add Current Tab to Favorites", symbol: "star"),
+      PaletteCommand(id: "copy", title: "Copy URL", symbol: "link"),
+      PaletteCommand(
+        id: "collapse", title: isCollapsed ? "Expand Sidebar" : "Collapse Sidebar", symbol: "sidebar.left"),
+    ]
+    for space in spaces where space.directory != spaceDirectory {
+      list.append(PaletteCommand(id: "space:\(space.directory)", title: "Switch to \(space.name)", symbol: "square.stack"))
+    }
+    list += [
+      PaletteCommand(id: "reload", title: "Reload Bookmarks and History", symbol: "arrow.clockwise"),
+      PaletteCommand(id: "settings", title: "Open Settings", symbol: "gearshape"),
+    ]
+    return list
+  }
+
+  func run(command id: String) {
+    switch id {
+    case "clear": clearInactiveTabs()
+    case "pin": if let activeTab { pin(activeTab) }
+    case "favorite": if let activeTab { addFavorite(activeTab) }
+    case "copy": copyURL()
+    case "collapse": toggleCollapse()
+    case "reload":
+      refreshBookmarks()
+      refreshRecents()
+      refreshTabs()
+    case "settings": openSettings()
+    default:
+      if id.hasPrefix("space:"), let space = spaces.first(where: { "space:\($0.directory)" == id }) {
+        switchSpace(space)
+      }
+    }
   }
 
   /// Moves a favorite to another favorite's place, or to the end.
@@ -244,12 +424,17 @@ final class SidebarModel {
     refreshTabs()
   }
 
+  /// The tabs that Clear would close.
+  var clearableTabIDs: [Int] {
+    TabCleanup.idsToClose(
+      in: snapshot.tabs, activeID: snapshot.activeTabID, favorites: favorites, keeping: Set(pinnedTabIDs.values))
+  }
+
   /// Arc's "Clear": closes every tab except the active one and the tabs of favorites.
   func clearInactiveTabs() {
-    let ids = TabCleanup.idsToClose(in: snapshot.tabs, activeID: snapshot.activeTabID, favorites: favorites)
+    let ids = clearableTabIDs
     guard !ids.isEmpty else { return }
-    perform { (chrome) throws(ChromeError) in try chrome.closeTabs(ids: ids) }
-    refreshTabs()
+    closeAndArchive(ids)
     notify(ids.count == 1 ? "Closed 1 tab" : "Closed \(ids.count) tabs", "checkmark.circle")
   }
 
@@ -279,6 +464,10 @@ final class SidebarModel {
       refreshTabs()
     case .bookmark, .history, .url, .search:
       open(result.url)
+    case .archived:
+      restore(url: result.url)
+    case let .command(id):
+      run(command: id)
     }
   }
 

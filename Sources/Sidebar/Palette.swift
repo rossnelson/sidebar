@@ -13,10 +13,15 @@ final class PaletteState {
   var tabs: [WindowTab] = []
   var history: [HistoryItem] = []
   var bookmarks: [BookmarkNode] = []
+  var archived: [ArchivedTab] = []
+  var commands: [PaletteCommand] = []
   var theme = ProfileTheme.standard
 
+  var isCommandMode: Bool { query.trimmingCharacters(in: .whitespaces).hasPrefix(">") }
+
   var results: [PaletteResult] {
-    PaletteSearch.results(query: query, tabs: tabs, bookmarks: bookmarks, history: history)
+    PaletteSearch.results(
+      query: query, tabs: tabs, bookmarks: bookmarks, history: history, archived: archived, commands: commands)
   }
 
   func move(_ delta: Int) {
@@ -57,6 +62,8 @@ final class PaletteController: NSObject, NSWindowDelegate {
     state.tabs = sources.tabs
     state.history = sources.history
     state.bookmarks = model.bookmarks
+    state.archived = model.archived
+    state.commands = model.commands
     state.theme = model.theme
     state.query = ""
     state.selection = 0
@@ -246,7 +253,7 @@ struct PaletteView: View {
   private func height(for results: [PaletteResult]) -> CGFloat {
     let rows = results.reduce(CGFloat(0)) { total, result in
       switch result.kind {
-      case .search, .url: total + 35
+      case .search, .url, .command: total + 35
       default: total + 51
       }
     }
@@ -260,11 +267,13 @@ struct PaletteView: View {
     let accent = Color(SpaceColors.palette(for: state.theme, dark: colorScheme == .dark).accent)
     VStack(spacing: 0) {
       HStack(spacing: 12) {
-        Image(systemName: "magnifyingglass")
+        Image(systemName: state.isCommandMode ? "chevron.right" : "magnifyingglass")
           .font(.system(size: 17, weight: .medium))
           .foregroundStyle(.secondary)
+          .contentTransition(.symbolEffect(.replace))
           .symbolEffect(.bounce, value: state.query.isEmpty)
-        TextField("Search tabs, bookmarks, history, or the web", text: $state.query)
+          .frame(width: 20)
+        TextField("Search tabs, bookmarks, history, or the web. Type > for commands", text: $state.query)
           .textFieldStyle(.plain)
           .font(.system(size: 19))
           .kerning(-0.2)
@@ -391,7 +400,7 @@ private struct PaletteRow: View {
 
   private var showsURL: Bool {
     switch result.kind {
-    case .search, .url: false
+    case .search, .url, .command: false
     default: true
     }
   }
@@ -400,6 +409,11 @@ private struct PaletteRow: View {
     switch result.kind {
     case .search: Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
     case .url: Image(systemName: "arrow.up.right").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+    case .command:
+      Image(systemName: result.symbol ?? "command")
+        .font(.system(size: 14, weight: .medium))
+        .foregroundStyle(.secondary)
+        .symbolEffect(.bounce, value: selected)
     default: Favicon(url: result.url, size: 18)
     }
   }
@@ -411,6 +425,8 @@ private struct PaletteRow: View {
     case .history: "History"
     case .url: "Open"
     case .search: "Google"
+    case .archived: "Archived"
+    case .command: "Command"
     }
   }
 }

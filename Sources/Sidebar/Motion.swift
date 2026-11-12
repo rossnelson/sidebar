@@ -101,6 +101,8 @@ struct LivingSurface: View {
     ZStack {
       MeshGradient(width: 3, height: 3, points: points, colors: colors)
         .motion(Motion.surface, value: phase)
+        // A new space's colors flow in instead of switching at once.
+        .motion(.smooth(duration: 0.6), value: palette)
 
       // The pointer light: only computed while the pointer moves.
       GeometryReader { proxy in

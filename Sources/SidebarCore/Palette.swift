@@ -31,6 +31,10 @@ public struct PaletteResult: Identifiable, Sendable, Equatable {
     case history
     case url
     case search
+    /// A tab that Sidebar closed earlier.
+    case archived
+    /// An action, typed after `>`.
+    case command(String)
   }
 
   public let id: String
@@ -38,12 +42,28 @@ public struct PaletteResult: Identifiable, Sendable, Equatable {
   public let title: String
   /// The page URL, or for `.search` the search URL.
   public let url: String
+  /// An SF Symbol, for a command.
+  public let symbol: String?
 
-  public init(id: String, kind: Kind, title: String, url: String) {
+  public init(id: String, kind: Kind, title: String, url: String, symbol: String? = nil) {
     self.id = id
     self.kind = kind
     self.title = title
     self.url = url
+    self.symbol = symbol
+  }
+}
+
+/// An action in the palette's command mode.
+public struct PaletteCommand: Sendable, Equatable {
+  public let id: String
+  public let title: String
+  public let symbol: String
+
+  public init(id: String, title: String, symbol: String) {
+    self.id = id
+    self.title = title
+    self.symbol = symbol
   }
 }
 
@@ -129,9 +149,27 @@ public enum PaletteSearch {
     tabs: [WindowTab],
     bookmarks: [BookmarkNode],
     history: [HistoryItem],
+    archived: [ArchivedTab] = [],
+    commands: [PaletteCommand] = [],
     limit: Int = 12
   ) -> [PaletteResult] {
     let text = query.trimmingCharacters(in: .whitespaces)
+
+    // ">" starts command mode: only commands, in their own order until text follows.
+    if text.hasPrefix(">") {
+      let needle = text.dropFirst().trimmingCharacters(in: .whitespaces)
+      let all = commands.enumerated().map { order, command in
+        (PaletteResult(
+          id: "command-\(command.id)", kind: .command(command.id), title: command.title,
+          url: "command:\(command.id)", symbol: command.symbol), order)
+      }
+      guard !needle.isEmpty else { return all.map(\.0) }
+      return all.compactMap { result, order in
+        bestScore(needle, title: result.title, url: "").map { (result, $0, order) }
+      }
+      .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 < $1.2 }
+      .map(\.0)
+    }
 
     let tabResults = tabs.map {
       PaletteResult(
@@ -143,6 +181,9 @@ public enum PaletteSearch {
     }
     let historyResults = history.map {
       PaletteResult(id: "history-\($0.id)", kind: .history, title: $0.title, url: $0.url)
+    }
+    let archivedResults = archived.map {
+      PaletteResult(id: "archived-\($0.id)", kind: .archived, title: $0.title, url: $0.url)
     }
 
     guard !text.isEmpty else {
@@ -157,7 +198,7 @@ public enum PaletteSearch {
       }
     }
     var scored: [(result: PaletteResult, score: Int, order: Int)] = []
-    for (order, result) in (tabResults + bookmarkResults + historyResults).enumerated() {
+    for (order, result) in (tabResults + bookmarkResults + archivedResults + historyResults).enumerated() {
       if let score = bestScore(text, title: result.title, url: result.url) {
         scored.append((result, score + boost(result.kind), order))
       }

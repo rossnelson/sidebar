@@ -74,6 +74,10 @@ private struct SpaceInkKey: EnvironmentKey {
   static let defaultValue = Color.black
 }
 
+private struct OnLightCardKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
 private struct SpaceAccentKey: EnvironmentKey {
   static let defaultValue = Color.white
 }
@@ -83,6 +87,12 @@ extension EnvironmentValues {
   var spaceInk: Color {
     get { self[SpaceInkKey.self] }
     set { self[SpaceInkKey.self] = newValue }
+  }
+
+  /// Icons sit on a white card: a white icon needs a dark tile.
+  var onLightCard: Bool {
+    get { self[OnLightCardKey.self] }
+    set { self[OnLightCardKey.self] = newValue }
   }
 
   /// The space's third tone, for small glows.
@@ -106,26 +116,81 @@ struct SidebarView: View {
       AddressPill(tab: model.activeTab, onOpen: model.openPalette)
         .padding(.top, 8)
         .cascadeIn(delay: 0.03)
+      if let problem = model.problem {
+        ProblemBanner(problem: problem)
+          .padding(.top, 8)
+          .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+
+      SpaceContent(model: model, selection: selection, rowTransition: rowTransition)
+        .id(model.spaceDirectory)
+        .transition(spaceTransition)
+
+      if model.spaces.count > 1 {
+        SpaceSwitcher(
+          spaces: model.spaces, current: model.spaceDirectory,
+          onSwitch: model.switchSpace, onSettings: model.openSettings)
+          .padding(.bottom, 8)
+          .cascadeIn(delay: 0.22)
+      }
+    }
+    .padding(.horizontal, 10)
+    .padding(.top, 10)
+    .motion(Motion.list, value: model.problem)
+    .motion(Motion.list, value: model.spaceDirectory)
+  }
+
+  /// The space's content slides in from the side of the new space, as in Arc.
+  private var spaceTransition: AnyTransition {
+    reduceMotion ? .opacity : .push(from: model.spaceStep > 0 ? .trailing : .leading)
+  }
+
+  private var rowTransition: AnyTransition {
+    reduceMotion
+      ? .opacity
+      : .asymmetric(
+        insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)),
+        removal: .opacity.combined(with: .scale(scale: 0.88, anchor: .leading)))
+  }
+}
+
+/// One space's favorites, pinned tabs, bookmarks and tabs. A new space
+/// gets a new one, so the whole block slides on a space change.
+private struct SpaceContent: View {
+  @Bindable var model: SidebarModel
+  let selection: Namespace.ID
+  let rowTransition: AnyTransition
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
       FavoritesGrid(model: model)
         .padding(.top, 12)
         .cascadeIn(delay: 0.06)
-
-      if let problem = model.problem {
-        ProblemBanner(problem: problem)
-          .padding(.top, 10)
-          .transition(.opacity.combined(with: .move(edge: .top)))
-      }
 
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {
           if !model.spaceName.isEmpty {
             SpaceLabel(
               name: model.spaceName, tabCount: model.snapshot.tabs.count,
-              clearableCount: TabCleanup.idsToClose(
-                in: model.snapshot.tabs, activeID: model.snapshot.activeTabID, favorites: model.favorites
-              ).count,
+              clearableCount: model.clearableTabIDs.count,
               onClear: model.clearInactiveTabs)
               .cascadeIn(delay: 0.09)
+          }
+
+          let pinned = model.pinnedTabIDs
+          ForEach(Array(model.pins.enumerated()), id: \.element.id) { index, pin in
+            let tab = pinned[pin.id].flatMap { id in model.snapshot.tabs.first { $0.id == id } }
+            PinRow(
+              pin: pin, tab: tab,
+              isActive: tab != nil && tab?.id == model.snapshot.activeTabID,
+              selection: selection,
+              onOpen: { model.openPin(pin) },
+              onReset: { model.resetPin(pin) },
+              onClose: { model.closePinnedTab(pin) },
+              onUnpin: { model.unpin(pin) },
+              onMove: { model.movePin($0, to: pin.id) })
+            .cascadeIn(delay: 0.1 + Motion.stagger(index))
+            .transition(rowTransition)
           }
 
           ForEach(Array(model.bookmarks.enumerated()), id: \.element.id) { index, node in
@@ -140,7 +205,7 @@ struct SidebarView: View {
           }
 
           let details = TabRow.details(for: model.snapshot.tabs)
-          ForEach(Array(model.snapshot.tabs.enumerated()), id: \.element.id) { index, tab in
+          ForEach(Array(model.unpinnedTabs.enumerated()), id: \.element.id) { index, tab in
             TabRow(
               tab: tab,
               detail: details[tab.id],
@@ -149,6 +214,7 @@ struct SidebarView: View {
               onSelect: { model.activate(tab) },
               onClose: { model.close(tab) },
               onFavorite: { model.addFavorite(tab) },
+              onPin: { model.pin(tab) },
               onPreview: { frame in model.showPreview(frame.map { _ in tab }, frame ?? .zero) },
               previewDelay: { model.isPreviewing ? 0.06 : 0.75 })
             .cascadeIn(delay: 0.16 + Motion.stagger(index))
@@ -175,26 +241,7 @@ struct SidebarView: View {
       .onScrollPhaseChange { _, phase in
         if phase != .idle { model.showPreview(nil, .zero) }
       }
-
-      if model.spaces.count > 1 {
-        SpaceSwitcher(
-          spaces: model.spaces, current: model.spaceDirectory,
-          onSwitch: model.switchSpace, onSettings: model.openSettings)
-          .padding(.bottom, 8)
-          .cascadeIn(delay: 0.22)
-      }
     }
-    .padding(.horizontal, 10)
-    .padding(.top, 10)
-    .motion(Motion.list, value: model.problem)
-  }
-
-  private var rowTransition: AnyTransition {
-    reduceMotion
-      ? .opacity
-      : .asymmetric(
-        insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)),
-        removal: .opacity.combined(with: .scale(scale: 0.88, anchor: .leading)))
   }
 }
 
@@ -405,6 +452,7 @@ private struct FavoriteTile: View {
       onOpen()
     } label: {
       Favicon(url: favorite.url, size: 20)
+        .environment(\.onLightCard, isActive)
         .keyframeAnimator(initialValue: 1.0, trigger: taps) { content, scale in
           content.scaleEffect(scale)
         } keyframes: { _ in
@@ -631,6 +679,7 @@ private struct TabRow: View {
   let onSelect: () -> Void
   let onClose: () -> Void
   let onFavorite: () -> Void
+  let onPin: () -> Void
   /// Shows the preview card beside this row (its frame), or hides it (`nil`).
   let onPreview: (CGRect?) -> Void
   /// Seconds to rest on the row before its card shows.
@@ -648,6 +697,7 @@ private struct TabRow: View {
       HStack(spacing: 10) {
         ZStack {
           Favicon(url: tab.url)
+            .environment(\.onLightCard, isActive)
             .keyframeAnimator(initialValue: 1.0, trigger: isActive) { content, scale in
               content.scaleEffect(scale)
             } keyframes: { _ in
@@ -726,9 +776,114 @@ private struct TabRow: View {
     .motion(.easeOut(duration: 0.14), value: hovering)
     .motion(Motion.press, value: tab.isLoading)
     .contextMenu {
+      Button("Pin Tab", action: onPin)
       Button("Add to Favorites", action: onFavorite)
       Divider()
       Button("Close Tab", action: onClose)
+    }
+  }
+}
+
+/// A pinned tab. It keeps its place and its own URL. Without an open tab it
+/// shows dimmed; a click opens it again.
+private struct PinRow: View {
+  let pin: Favorite
+  /// The pin's open tab, if any.
+  let tab: ChromeTab?
+  let isActive: Bool
+  let selection: Namespace.ID
+  let onOpen: () -> Void
+  let onReset: () -> Void
+  let onClose: () -> Void
+  let onUnpin: () -> Void
+  /// Another pin dropped on this one.
+  let onMove: (UUID) -> Void
+  @State private var hovering = false
+  @State private var dropTargeted = false
+  @Environment(\.spaceInk) private var ink
+
+  /// The tab has left the pin's page.
+  private var wandered: Bool { tab.map { $0.url != pin.url } ?? false }
+
+  var body: some View {
+    Button(action: onOpen) {
+      HStack(spacing: 10) {
+        ZStack {
+          Favicon(url: tab?.url ?? pin.url)
+            .environment(\.onLightCard, isActive)
+          if tab?.isLoading == true {
+            LoadingRing(size: 22).foregroundStyle(isActive ? ink : .white)
+          }
+        }
+        .frame(width: 18, height: 18)
+        .opacity(tab == nil ? 0.55 : 1)
+        Text(tab.map { $0.title.isEmpty ? $0.url : $0.title } ?? pin.title)
+          .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+          .kerning(-0.1)
+          .lineLimit(1)
+          .opacity(tab == nil ? 0.65 : 1)
+        Spacer(minLength: 0)
+        Color.clear.frame(width: wandered ? 40 : 18)
+      }
+      .foregroundStyle(isActive ? AnyShapeStyle(ink) : AnyShapeStyle(.white))
+      .padding(.horizontal, 10)
+      .frame(height: 32)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        if isActive {
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(.white.opacity(0.94))
+            .shadow(color: .black.opacity(0.14), radius: 1.5, y: 1)
+            .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+            .matchedGeometryEffect(id: "active-card", in: selection)
+        } else if hovering || dropTargeted {
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(.white.opacity(dropTargeted ? 0.22 : 0.13))
+            .transition(.opacity)
+        }
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(PressStyle())
+    .overlay(alignment: .trailing) {
+      HStack(spacing: 4) {
+        // The tab has wandered: a way back to the pinned page, like Arc.
+        if wandered && hovering {
+          Button(action: onReset) {
+            Image(systemName: "arrow.uturn.backward")
+              .font(.system(size: 9.5, weight: .bold))
+              .frame(width: 18, height: 18)
+              .contentShape(Circle())
+          }
+          .buttonStyle(PressStyle(scale: 0.8))
+          .foregroundStyle(isActive ? ink : .white)
+          .help("Back to \(pin.url)")
+          .transition(.scale(scale: 0.5).combined(with: .opacity))
+        }
+        if tab != nil && hovering {
+          CloseButton(onClose: onClose, tint: isActive ? ink : .white)
+            .transition(.scale(scale: 0.5).combined(with: .opacity))
+        }
+      }
+      .padding(.trailing, 7)
+    }
+    .draggable(FavoriteDrag.payload(favoriteID: pin.id))
+    .dropDestination(for: String.self) { items, _ in
+      let ids = items.compactMap(FavoriteDrag.favoriteID)
+      ids.forEach(onMove)
+      return !ids.isEmpty
+    } isTargeted: { dropTargeted = $0 }
+    .onHover { hovering = $0 }
+    .motion(.easeOut(duration: 0.14), value: hovering)
+    .motion(Motion.press, value: dropTargeted)
+    .help(pin.url)
+    .contextMenu {
+      if wandered { Button("Back to Pinned Page", action: onReset) }
+      Button("Unpin", action: onUnpin)
+      if tab != nil {
+        Divider()
+        Button("Close Tab", action: onClose)
+      }
     }
   }
 }
@@ -921,8 +1076,23 @@ private struct BookmarkTree: View {
 struct Favicon: View {
   let url: String
   var size: CGFloat = 16
+  @Environment(\.onLightCard) private var onLightCard
 
   var body: some View {
+    let image = FaviconCache.shared.image(for: url)
+    let needsBacking = onLightCard && image.map(FaviconCache.shared.isLight) == true
+    icon(image)
+      // A white icon on a white card gets a dark tile so it stays visible.
+      .padding(needsBacking ? size * 0.14 : 0)
+      .frame(width: size, height: size)
+      .background {
+        if needsBacking {
+          RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(.black.opacity(0.82))
+        }
+      }
+  }
+
+  @ViewBuilder private func icon(_ image: NSImage?) -> some View {
     Group {
       if url.hasPrefix("chrome://") {
         Image(systemName: Self.chromeSymbol(for: url))
@@ -930,7 +1100,7 @@ struct Favicon: View {
       } else if url.hasPrefix("file://") {
         Image(systemName: "doc.text")
           .font(.system(size: size * 0.78, weight: .medium))
-      } else if let image = FaviconCache.shared.image(for: url) {
+      } else if let image {
         Image(nsImage: image)
           .resizable()
           .interpolation(.high)
@@ -939,7 +1109,6 @@ struct Favicon: View {
         Monogram(url: url, size: size)
       }
     }
-    .frame(width: size, height: size)
   }
 
   static func chromeSymbol(for url: String) -> String {
@@ -991,6 +1160,7 @@ final class FaviconCache {
 
   private var index = FaviconIndex()
   @ObservationIgnored private var decoded: [Data: NSImage] = [:]
+  @ObservationIgnored private var lightness: [ObjectIdentifier: Bool] = [:]
   @ObservationIgnored private var loading = false
   @ObservationIgnored private var lastRead: Date?
   @ObservationIgnored private var lastFile: URL?
@@ -1001,6 +1171,39 @@ final class FaviconCache {
     let image = NSImage(data: data)
     decoded[data] = image
     return image
+  }
+
+  /// The icon is mostly white, so it disappears on a white card.
+  func isLight(_ image: NSImage) -> Bool {
+    let key = ObjectIdentifier(image)
+    if let known = lightness[key] { return known }
+    let light = Self.measureLightness(image)
+    lightness[key] = light
+    return light
+  }
+
+  /// Draws the icon at 8 × 8 and averages the brightness of its visible pixels.
+  private static func measureLightness(_ image: NSImage) -> Bool {
+    let side = 8
+    var pixels = [UInt8](repeating: 0, count: side * side * 4)
+    guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+      let context = CGContext(
+        data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return false }
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+    var luminance = 0.0, coverage = 0.0
+    for index in stride(from: 0, to: pixels.count, by: 4) {
+      let alpha = Double(pixels[index + 3]) / 255
+      guard alpha > 0.1 else { continue }
+      // Premultiplied: divide the alpha back out.
+      let r = Double(pixels[index]) / 255 / alpha, g = Double(pixels[index + 1]) / 255 / alpha
+      let b = Double(pixels[index + 2]) / 255 / alpha
+      luminance += (0.2126 * r + 0.7152 * g + 0.0722 * b) * alpha
+      coverage += alpha
+    }
+    guard coverage > 64 * 0.12 else { return false }
+    return luminance / coverage > 0.82
   }
 
   /// Reads the profile's Favicons database in the background.
@@ -1018,6 +1221,7 @@ final class FaviconCache {
         if let next, next.byPage.count != self.index.byPage.count || next.byHost.keys != self.index.byHost.keys {
           self.index = next
           self.decoded = [:]
+          self.lightness = [:]
         }
         self.loading = false
       }

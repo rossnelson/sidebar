@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.setPeeking = { [weak self] in self?.setPeeking($0) }
     model.switchSpace = { [weak self] in self?.switchSpace(to: $0) }
     model.openSettings = { [weak self] in self?.settings.show() }
+    model.copyURL = { [weak self] in self?.copyCurrentURL() }
     // A two-finger swipe across the sidebar moves to the next or previous space.
     swipeMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
       MainActor.assumeIsolated { self?.trackSwipe(event) }
@@ -162,6 +163,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       self?.model.refreshSpaces()
     }
     FaviconCache.shared.reload(profileDirectory: model.profileDirectory)
+    // Auto-archive: close tabs that no one has used for the chosen time.
+    schedule(every: 60) { [weak self] in
+      guard let self, preferences.archiveAfterHours > 0, model.chrome.isRunning, chromeWindow != nil else { return }
+      model.refreshTabs()
+      model.archiveStaleTabs(after: TimeInterval(preferences.archiveAfterHours) * 3600)
+    }
     schedule(every: 15) { [weak self] in
       guard let self, panel.isVisible else { return }
       model.refreshRecents()

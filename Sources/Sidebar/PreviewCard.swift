@@ -122,6 +122,7 @@ private struct PreviewCard: View {
     return VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .top, spacing: 10) {
         Favicon(url: tab.url, size: 24)
+          .environment(\.onLightCard, true)
           .padding(5)
           .background(.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         Text(tab.title.isEmpty ? tab.url : tab.title)
