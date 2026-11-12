@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Copy the current URL. Registered only while Chrome is frontmost.
   private var copyURL: HotKey?
   private var peekHideTimer: Timer?
+  /// Counts peek shows and hides, so an old slide-out does not hide a new peek.
+  private var peekGeneration = 0
   /// Our frame window's last frame, for placing the peek.
   private var frameRect: CGRect?
   private var statusItem: NSStatusItem?
@@ -227,7 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Collapses to a thin strip or expands. Chrome's left edge slides, and the
   /// sidebar slides with it: off the screen to the left, or back in.
   private func toggleCollapse() {
-    hidePeek()
+    hidePeek(animated: false)
     model.isCollapsed.toggle()
     guard let window = chromeWindow else { return }
     let delta = Self.sidebarWidth - Self.margin
@@ -274,19 +276,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     guard model.isCollapsed, let frameRect, !model.isPeeking else { return }
     model.isPeeking = true
+    peekGeneration += 1
+    // The same place and size as the open sidebar, over Chrome's left edge.
+    let target = CGRect(
+      x: frameRect.minX + Self.gap, y: frameRect.minY,
+      width: Self.sidebarWidth - Self.gap * 2, height: frameRect.height)
+    let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     peekPanel.appearance = model.theme.appearance
-    peekPanel.setFrame(
-      CGRect(x: frameRect.minX, y: frameRect.minY, width: Self.sidebarWidth - 8, height: frameRect.height),
-      display: true)
+    // Start just off the screen's left edge and slide in; with Reduce Motion, fade in.
+    peekPanel.setFrame(reduceMotion ? target : target.offsetBy(dx: -target.maxX, dy: 0), display: true)
+    peekPanel.alphaValue = reduceMotion ? 0 : 1
     peekPanel.orderFrontRegardless()
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = reduceMotion ? 0.15 : 0.24
+      context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+      peekPanel.animator().setFrame(target, display: true)
+      peekPanel.animator().alphaValue = 1
+    }
     model.refreshTabs()
   }
 
-  private func hidePeek() {
+  /// Slides the peek back off the screen's left edge, or removes it at once.
+  private func hidePeek(animated: Bool = true) {
     peekHideTimer?.invalidate()
     peekHideTimer = nil
     model.isPeeking = false
-    peekPanel.orderOut(nil)
+    peekGeneration += 1
+    guard animated, peekPanel.isVisible else { return peekPanel.orderOut(nil) }
+    let generation = peekGeneration
+    let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    let frame = peekPanel.frame
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = reduceMotion ? 0.12 : 0.18
+      context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+      if reduceMotion {
+        peekPanel.animator().alphaValue = 0
+      } else {
+        peekPanel.animator().setFrame(frame.offsetBy(dx: -frame.maxX, dy: 0), display: true)
+      }
+    } completionHandler: { [weak self] in
+      MainActor.assumeIsolated {
+        // A new peek may have started while this one slid out.
+        guard let self, generation == self.peekGeneration else { return }
+        self.peekPanel.orderOut(nil)
+        self.peekPanel.alphaValue = 1
+      }
+    }
   }
 
   // MARK: - Menu bar

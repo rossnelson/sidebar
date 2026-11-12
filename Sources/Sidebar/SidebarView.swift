@@ -46,7 +46,7 @@ struct PeekView: View {
       .padding(.vertical, 4)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .background(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
+        RoundedRectangle(cornerRadius: FrameView.outerCornerRadius, style: .continuous)
           .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark)))
       .foregroundStyle(.white)
       .environment(\.sidebarColors, SpaceColors.rows)
