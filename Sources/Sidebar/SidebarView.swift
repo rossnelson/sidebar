@@ -119,7 +119,12 @@ struct SidebarView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {
           if !model.spaceName.isEmpty {
-            SpaceLabel(name: model.spaceName, tabCount: model.snapshot.tabs.count)
+            SpaceLabel(
+              name: model.spaceName, tabCount: model.snapshot.tabs.count,
+              clearableCount: TabCleanup.idsToClose(
+                in: model.snapshot.tabs, activeID: model.snapshot.activeTabID, favorites: model.favorites
+              ).count,
+              onClear: model.clearInactiveTabs)
               .cascadeIn(delay: 0.09)
           }
 
@@ -143,7 +148,9 @@ struct SidebarView: View {
               selection: selection,
               onSelect: { model.activate(tab) },
               onClose: { model.close(tab) },
-              onFavorite: { model.addFavorite(tab) })
+              onFavorite: { model.addFavorite(tab) },
+              onPreview: { frame in model.showPreview(frame.map { _ in tab }, frame ?? .zero) },
+              previewDelay: { model.isPreviewing ? 0.06 : 0.75 })
             .cascadeIn(delay: 0.16 + Motion.stagger(index))
             .transition(rowTransition)
           }
@@ -164,6 +171,15 @@ struct SidebarView: View {
           Color.black
           LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 18)
         }
+      }
+      .onScrollPhaseChange { _, phase in
+        if phase != .idle { model.showPreview(nil, .zero) }
+      }
+
+      if model.spaces.count > 1 {
+        SpaceSwitcher(spaces: model.spaces, current: model.spaceDirectory, onSwitch: model.switchSpace)
+          .padding(.bottom, 10)
+          .cascadeIn(delay: 0.22)
       }
     }
     .padding(.horizontal, 10)
@@ -325,7 +341,20 @@ private struct FavoritesGrid: View {
           favorite: favorite,
           isActive: model.isActive(favorite),
           onOpen: { model.openFavorite(favorite) },
-          onRemove: { model.removeFavorite(favorite) })
+          onRemove: { model.removeFavorite(favorite) },
+          onDrop: { text in
+            if let id = FavoriteDrag.favoriteID(text) {
+              model.moveFavorite(id, to: favorite.id)
+            } else if let dropped = FavoriteDrag.parse(text) {
+              model.addFavorite(dropped)
+              if let added = model.favorites.last, added.url == dropped.url {
+                model.moveFavorite(added.id, to: favorite.id)
+              }
+            } else {
+              return false
+            }
+            return true
+          })
         .transition(.scale(scale: 0.4).combined(with: .opacity))
       }
     }
@@ -336,9 +365,17 @@ private struct FavoritesGrid: View {
         .strokeBorder(.white.opacity(dropTargeted ? 0.6 : 0), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
     .scaleEffect(dropTargeted ? 1.02 : 1)
     .dropDestination(for: String.self) { items, _ in
-      let added = items.compactMap(FavoriteDrag.parse)
-      for favorite in added { model.addFavorite(favorite) }
-      return !added.isEmpty
+      var handled = false
+      for item in items {
+        if let id = FavoriteDrag.favoriteID(item) {
+          model.moveFavorite(id, to: nil)
+          handled = true
+        } else if let favorite = FavoriteDrag.parse(item) {
+          model.addFavorite(favorite)
+          handled = true
+        }
+      }
+      return handled
     } isTargeted: { dropTargeted = $0 }
     .motion(Motion.press, value: favorites.map(\.id))
     .motion(Motion.press, value: dropTargeted)
@@ -350,7 +387,10 @@ private struct FavoriteTile: View {
   let isActive: Bool
   let onOpen: () -> Void
   let onRemove: () -> Void
+  /// A tab or another favorite dropped on this tile. Returns `true` when used.
+  let onDrop: (String) -> Bool
   @State private var hovering = false
+  @State private var dropTargeted = false
   @State private var taps = 0
   @State private var tilt = CGSize.zero
   @State private var size = CGSize.zero
@@ -379,8 +419,11 @@ private struct FavoriteTile: View {
         .overlay(
           RoundedRectangle(cornerRadius: 12, style: .continuous)
             .strokeBorder(.white.opacity(hovering && !isActive ? 0.25 : 0), lineWidth: 0.5))
-        .scaleEffect(hovering ? 1.05 : 1)
-        .offset(y: hovering ? -1.5 : 0)
+        .overlay(
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(.white.opacity(dropTargeted ? 0.9 : 0), lineWidth: 1.5))
+        .scaleEffect(dropTargeted ? 0.92 : hovering ? 1.05 : 1)
+        .offset(x: dropTargeted ? 4 : 0, y: hovering ? -1.5 : 0)
         // Leans toward the pointer.
         .rotation3DEffect(
           .degrees(hovering && !reduceMotion ? 14 : 0),
@@ -388,6 +431,15 @@ private struct FavoriteTile: View {
         .contentShape(Rectangle())
     }
     .buttonStyle(PressStyle(scale: 0.9))
+    .draggable(FavoriteDrag.payload(favoriteID: favorite.id)) {
+      Favicon(url: favorite.url, size: 22)
+        .frame(width: 44, height: 44)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+    .dropDestination(for: String.self) { items, _ in
+      items.reduce(false) { $0 || onDrop($1) }
+    } isTargeted: { dropTargeted = $0 }
+    .motion(Motion.press, value: dropTargeted)
     .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
     .onContinuousHover { phase in
       guard case .active(let location) = phase, size.width > 0 else { return }
@@ -408,6 +460,10 @@ private struct FavoriteTile: View {
 private struct SpaceLabel: View {
   let name: String
   let tabCount: Int
+  /// Tabs that Clear would close.
+  let clearableCount: Int
+  let onClear: () -> Void
+  @State private var hovering = false
 
   var body: some View {
     HStack(spacing: 6) {
@@ -418,21 +474,123 @@ private struct SpaceLabel: View {
       Text(name.uppercased())
         .font(.system(size: 10.5, weight: .semibold))
         .kerning(0.9)
+        .opacity(0.62)
       Spacer(minLength: 4)
-      Text("\(tabCount)")
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
-        .monospacedDigit()
-        .contentTransition(.numericText(value: Double(tabCount)))
-        .padding(.horizontal, 6)
-        .padding(.vertical, 1)
-        .background(.white.opacity(0.14), in: Capsule())
-        .help("\(tabCount) open tabs in this window")
+      if hovering && clearableCount > 0 {
+        ClearButton(count: clearableCount, onClear: onClear)
+          .transition(.asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity),
+            removal: .opacity))
+      } else {
+        Text("\(tabCount)")
+          .font(.system(size: 10, weight: .semibold, design: .rounded))
+          .monospacedDigit()
+          .contentTransition(.numericText(value: Double(tabCount)))
+          .padding(.horizontal, 6)
+          .padding(.vertical, 1)
+          .background(.white.opacity(0.14), in: Capsule())
+          .opacity(0.62)
+          .help("\(tabCount) open tabs in this window")
+          .transition(.opacity)
+      }
     }
-    .opacity(0.62)
+    .frame(height: 20)
     .padding(.horizontal, 10)
     .padding(.top, 2)
     .padding(.bottom, 4)
+    .contentShape(Rectangle())
+    .onHover { hovering = $0 }
     .motion(.snappy, value: tabCount)
+    .motion(Motion.press, value: hovering)
+  }
+}
+
+/// Closes every tab but the active one and the tabs of favorites, like Arc's Clear.
+private struct ClearButton: View {
+  let count: Int
+  let onClear: () -> Void
+  @State private var hovering = false
+  @State private var sweeps = 0
+
+  var body: some View {
+    Button {
+      sweeps += 1
+      onClear()
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: "arrow.down")
+          .font(.system(size: 9, weight: .bold))
+          .symbolEffect(.bounce.down, options: .nonRepeating, value: hovering)
+        Text("Clear")
+          .font(.system(size: 10.5, weight: .semibold))
+      }
+      .padding(.horizontal, 8)
+      .padding(.vertical, 2)
+      .background(.white.opacity(hovering ? 0.26 : 0.16), in: Capsule())
+      .contentShape(Capsule())
+    }
+    .buttonStyle(PressStyle(scale: 0.9))
+    .onHover { hovering = $0 }
+    .motion(.easeOut(duration: 0.14), value: hovering)
+    .help(count == 1 ? "Close 1 tab that is not active or a favorite" : "Close \(count) tabs that are not active or favorites")
+  }
+}
+
+/// One dot per Chrome profile, in the profile's colors. A click brings that
+/// profile's window to the front.
+private struct SpaceSwitcher: View {
+  let spaces: [SidebarModel.Space]
+  let current: String
+  let onSwitch: (SidebarModel.Space) -> Void
+  @Namespace private var ring
+
+  var body: some View {
+    HStack(spacing: 6) {
+      ForEach(spaces) { space in
+        SpaceDot(space: space, isCurrent: space.directory == current, ring: ring) { onSwitch(space) }
+      }
+    }
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(.white.opacity(0.1), in: Capsule())
+    .frame(maxWidth: .infinity)
+    .motion(Motion.glide, value: current)
+  }
+}
+
+private struct SpaceDot: View {
+  let space: SidebarModel.Space
+  let isCurrent: Bool
+  let ring: Namespace.ID
+  let onTap: () -> Void
+  @State private var hovering = false
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    let palette = SpaceColors.palette(for: space.theme, dark: colorScheme == .dark)
+    Button(action: onTap) {
+      ZStack {
+        if isCurrent {
+          Circle()
+            .strokeBorder(.white, lineWidth: 1.5)
+            .matchedGeometryEffect(id: "current-space", in: ring)
+        }
+        Circle()
+          .fill(LinearGradient(
+            colors: [Color(palette.gradientStart), Color(palette.gradientEnd)],
+            startPoint: .topLeading, endPoint: .bottomTrailing))
+          .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 0.5))
+          .padding(isCurrent ? 4 : 5)
+          .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
+      }
+      .frame(width: 22, height: 22)
+      .scaleEffect(hovering ? 1.15 : 1)
+      .contentShape(Circle())
+    }
+    .buttonStyle(PressStyle(scale: 0.85))
+    .onHover { hovering = $0 }
+    .motion(Motion.press, value: hovering)
+    .help(isCurrent ? space.name : "Switch to \(space.name)")
   }
 }
 
@@ -458,11 +616,20 @@ private struct TabRow: View {
   let onSelect: () -> Void
   let onClose: () -> Void
   let onFavorite: () -> Void
+  /// Shows the preview card beside this row (its frame), or hides it (`nil`).
+  let onPreview: (CGRect?) -> Void
+  /// Seconds to rest on the row before its card shows.
+  let previewDelay: () -> Double
   @State private var hovering = false
+  @State private var frame = CGRect.zero
+  @State private var previewTask: Task<Void, Never>?
   @Environment(\.spaceInk) private var ink
 
   var body: some View {
-    Button(action: onSelect) {
+    Button {
+      endPreview()
+      onSelect()
+    } label: {
       HStack(spacing: 10) {
         ZStack {
           Favicon(url: tab.url)
@@ -535,10 +702,14 @@ private struct TabRow: View {
           .transition(.scale(scale: 0.5).combined(with: .opacity))
       }
     }
-    .onHover { hovering = $0 }
+    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+    .onHover { inside in
+      hovering = inside
+      inside ? beginPreview() : endPreview()
+    }
+    .onDisappear(perform: endPreview)
     .motion(.easeOut(duration: 0.14), value: hovering)
     .motion(Motion.press, value: tab.isLoading)
-    .help(tab.url)
     .contextMenu {
       Button("Add to Favorites", action: onFavorite)
       Divider()
@@ -548,6 +719,24 @@ private struct TabRow: View {
 }
 
 extension TabRow {
+  /// Shows the card after the pointer rests on the row.
+  fileprivate func beginPreview() {
+    previewTask?.cancel()
+    let delay = previewDelay()
+    previewTask = Task {
+      try? await Task.sleep(for: .seconds(delay))
+      guard !Task.isCancelled else { return }
+      onPreview(frame)
+    }
+  }
+
+  fileprivate func endPreview() {
+    guard previewTask != nil else { return }
+    previewTask?.cancel()
+    previewTask = nil
+    onPreview(nil)
+  }
+
   /// Labels that tell apart tabs with the same title: the host (with its
   /// port) when their sites differ, else the path when their pages differ.
   /// Tabs on the very same page get no label.
@@ -574,6 +763,16 @@ enum FavoriteDrag {
   static let separator = "\u{1F}"
 
   static func payload(url: String, title: String) -> String { url + separator + title }
+
+  /// A favorite dragged to a new place in the grid.
+  static let favoritePrefix = "sidebar-favorite:"
+
+  static func payload(favoriteID: UUID) -> String { favoritePrefix + favoriteID.uuidString }
+
+  static func favoriteID(_ text: String) -> UUID? {
+    guard text.hasPrefix(favoritePrefix) else { return nil }
+    return UUID(uuidString: String(text.dropFirst(favoritePrefix.count)))
+  }
 
   static func parse(_ text: String) -> Favorite? {
     let parts = text.components(separatedBy: separator)
@@ -712,6 +911,9 @@ struct Favicon: View {
     Group {
       if url.hasPrefix("chrome://") {
         Image(systemName: Self.chromeSymbol(for: url))
+          .font(.system(size: size * 0.78, weight: .medium))
+      } else if url.hasPrefix("file://") {
+        Image(systemName: "doc.text")
           .font(.system(size: size * 0.78, weight: .medium))
       } else if let image = FaviconCache.shared.image(for: url) {
         Image(nsImage: image)

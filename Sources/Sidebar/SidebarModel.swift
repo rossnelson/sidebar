@@ -16,6 +16,10 @@ final class SidebarModel {
   /// The space's name: the Chrome profile's name.
   var spaceName = ""
   var favorites: [Favorite] = []
+  /// Every Chrome profile, for the space switcher.
+  var spaces: [Space] = []
+  /// The folder name of the current space's profile, for example `Profile 1`.
+  var spaceDirectory = ""
   /// Where Chrome's window sits inside the frame, top-left origin.
   var frameHole = CGRect.zero
 
@@ -32,6 +36,23 @@ final class SidebarModel {
   @ObservationIgnored var toggleCollapse: () -> Void = {}
   /// Shows or hides the peek. Set by the app delegate.
   @ObservationIgnored var setPeeking: (Bool) -> Void = { _ in }
+  /// Brings a space's Chrome window to the front. Set by the app delegate.
+  @ObservationIgnored var switchSpace: (Space) -> Void = { _ in }
+  /// Shows a tab's preview card beside a row (its frame in the sidebar
+  /// window, top-left origin), or hides it. Set by the app delegate.
+  @ObservationIgnored var showPreview: (ChromeTab?, CGRect) -> Void = { _, _ in }
+  /// The preview card is on screen, so the next row shows its card at once.
+  @ObservationIgnored var isPreviewing = false
+  /// Shows a short message over Chrome. Set by the app delegate.
+  @ObservationIgnored var notify: (String, String) -> Void = { _, _ in }
+
+  /// A Chrome profile shown as a space.
+  struct Space: Identifiable, Equatable {
+    var id: String { directory }
+    let directory: String
+    let name: String
+    let theme: ProfileTheme
+  }
 
   var activeTab: ChromeTab? {
     snapshot.tabs.first { $0.id == snapshot.activeTabID }
@@ -75,7 +96,9 @@ final class SidebarModel {
         forWindowTitle: windowTitle, profiles: ChromeProfiles.parse(localState: localState))
     else { return }
     let next = base.appending(path: directory)
-    spaceName = ChromeProfiles.parse(localState: localState).first { $0.directory == directory }?.name ?? ""
+    let name = ChromeProfiles.parse(localState: localState).first { $0.directory == directory }?.name ?? ""
+    if name != spaceName { spaceName = name }
+    if directory != spaceDirectory { spaceDirectory = directory }
     guard next != profileDirectory else { return }
     profileDirectory = next
     loadFavorites()
@@ -85,6 +108,29 @@ final class SidebarModel {
     refreshBookmarks()
     refreshRecents()
     FaviconCache.shared.reload(profileDirectory: next)
+  }
+
+  @ObservationIgnored private var spacesModified: [Date?] = []
+
+  /// Re-reads the profile list and each profile's colors when Chrome has changed them.
+  func refreshSpaces() {
+    let base = ChromeProfile.defaultBase
+    func modified(_ url: URL) -> Date? {
+      (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+    guard let localState = try? Data(contentsOf: base.appending(path: "Local State")) else { return }
+    let profiles = ChromeProfiles.parse(localState: localState)
+    let stamps = [modified(base.appending(path: "Local State"))]
+      + profiles.map { modified(base.appending(path: $0.directory).appending(path: "Preferences")) }
+    guard stamps != spacesModified else { return }
+    spacesModified = stamps
+    let next = profiles.map { profile in
+      let preferences = try? Data(contentsOf: base.appending(path: profile.directory).appending(path: "Preferences"))
+      return Space(
+        directory: profile.directory, name: profile.name,
+        theme: preferences.map(ProfileTheme.parse(preferences:)) ?? .standard)
+    }
+    if next != spaces { spaces = next }
   }
 
   /// Re-reads the profile's theme only when its Preferences file has changed.
@@ -157,6 +203,11 @@ final class SidebarModel {
     }
   }
 
+  /// Moves a favorite to another favorite's place, or to the end.
+  func moveFavorite(_ id: UUID, to target: UUID?) {
+    saveFavorites(FavoritesStore.moving(id, to: target, in: favorites))
+  }
+
   /// Switches to the favorite's tab when one is open, else opens it.
   func openFavorite(_ favorite: Favorite) {
     if let tab = favorite.matchingTab(in: snapshot.tabs) { return activate(tab) }
@@ -182,6 +233,15 @@ final class SidebarModel {
   func close(_ tab: ChromeTab) {
     perform { (chrome) throws(ChromeError) in try chrome.closeTab(id: tab.id) }
     refreshTabs()
+  }
+
+  /// Arc's "Clear": closes every tab except the active one and the tabs of favorites.
+  func clearInactiveTabs() {
+    let ids = TabCleanup.idsToClose(in: snapshot.tabs, activeID: snapshot.activeTabID, favorites: favorites)
+    guard !ids.isEmpty else { return }
+    perform { (chrome) throws(ChromeError) in try chrome.closeTabs(ids: ids) }
+    refreshTabs()
+    notify(ids.count == 1 ? "Closed 1 tab" : "Closed \(ids.count) tabs", "checkmark.circle")
   }
 
   func open(_ url: String) {

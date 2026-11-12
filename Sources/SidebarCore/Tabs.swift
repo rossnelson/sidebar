@@ -162,6 +162,21 @@ public enum ChromeScripts {
     """
   }
 
+  /// Closes several tabs of the front window in one script.
+  public static func closeTabs(ids: [Int]) -> String {
+    let list = ids.map { "\"\($0)\"" }.joined(separator: ", ")
+    return """
+      tell application id "\(bundleID)"
+        set doomed to {\(list)}
+        set w to front window
+        -- From the last tab back, so closing a tab does not shift the ones still to check.
+        repeat with i from (count of tabs of w) to 1 by -1
+          if doomed contains ((id of tab i of w) as text) then close tab i of w
+        end repeat
+      end tell
+      """
+  }
+
   public enum Navigation: String, Sendable { case back = "go back", forward = "go forward", reload }
 
   public static func navigate(_ navigation: Navigation) -> String {

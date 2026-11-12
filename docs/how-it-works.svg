@@ -154,7 +154,7 @@
     <text x="60" y="774">installs a Chrome extension</text>
     <text x="60" y="800">injects code or libraries into Chrome</text>
     <text x="380" y="774">patches, re-signs or replaces Chrome</text>
-    <text x="380" y="800">adds launch flags or a debugging port</text>
+    <text x="380" y="800">opens a debugging port or adds flags</text>
     <text x="700" y="774">runs JavaScript in your pages</text>
     <text x="700" y="800">writes to Chrome's profile files</text>
   </g>

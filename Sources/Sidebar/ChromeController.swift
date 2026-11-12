@@ -63,6 +63,10 @@ final class ChromeController {
     try run(ChromeScripts.closeTab(id: id))
   }
 
+  func closeTabs(ids: [Int]) throws(ChromeError) {
+    try run(ChromeScripts.closeTabs(ids: ids))
+  }
+
   func openInNewTab(_ url: String) throws(ChromeError) {
     try run(ChromeScripts.openInNewTab(url))
   }

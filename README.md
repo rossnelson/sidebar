@@ -7,7 +7,10 @@ Chrome window, with:
 
 - your open tabs
 - your Chrome bookmarks (synced and local)
-- a grid of favorites for each Chrome profile ("space")
+- a grid of favorites for each Chrome profile ("space"); drag to add or reorder
+- a space switcher: one colored dot per Chrome profile
+- a preview card with the full title and address when the pointer rests on a tab
+- **Clear**, which closes every tab except the active tab and the tabs of favorites
 - a ⌘T palette that searches tabs, bookmarks and history, or opens a URL or a web search
 - back, forward and reload buttons, and an address pill that opens the palette
 
@@ -44,7 +47,7 @@ System Settings → Privacy & Security.
 
 - installs a Chrome extension
 - injects code or loads libraries into Chrome
-- adds launch flags or opens a remote debugging port
+- opens a remote debugging port or adds a flag that changes how Chrome runs
 - runs JavaScript in your pages (it does not use Chrome's "Allow JavaScript from Apple Events" setting)
 - writes to Chrome's profile files
 
@@ -168,12 +171,29 @@ and press the new keys. A shortcut must include ⌘, ⌃ or ⌥. Press Esc to ca
 
 ## Favorites
 
-Each Chrome profile has its own favorites grid, with up to 12 favorites. Add a
-favorite from a tab's context menu. Click a favorite to switch to its open tab,
-or to open it when no tab matches.
+Each Chrome profile has its own favorites grid, with up to 12 favorites. To add a
+favorite, drag a tab onto the grid, or use the tab's context menu. To reorder the
+favorites, drag a favorite onto another one. Click a favorite to switch to its
+open tab, or to open it when no tab matches.
 
 Sidebar saves favorites in
 `~/Library/Application Support/Sidebar/favorites-<profile folder>.json`.
+
+## Spaces
+
+Each Chrome profile is a space, with its own colors and favorites. When Chrome
+has more than one profile, dots at the bottom of the sidebar show each space.
+Click a dot to bring that profile's window to the front. When that profile has
+no open window, Sidebar asks Chrome to open one with
+`open -nb com.google.Chrome --args --profile-directory=<folder>`, the same
+request that Chrome's own profile menu makes. The running Chrome opens the
+window; nothing else changes.
+
+## Clear
+
+Move the pointer over the space name above your tabs and click **Clear**. Sidebar
+closes every tab except the active tab and the tabs that your favorites point to.
+To get a tab back, press ⇧⌘T in Chrome.
 
 ## Development
 

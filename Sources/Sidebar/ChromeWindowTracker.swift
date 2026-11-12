@@ -80,6 +80,21 @@ final class ChromeWindowTracker {
         == chrome.processIdentifier))
   }
 
+  /// Brings the first browser window whose title passes `matches` to the
+  /// front, and Chrome with it. `false` when no such window is open here.
+  func raiseWindow(where matches: (String) -> Bool) -> Bool {
+    guard let appElement, let observedPID else { return false }
+    let all: [AXUIElement] = copy(appElement, kAXWindowsAttribute) ?? []
+    for window in all where WindowRules.isAttachable(attributes(of: window)) {
+      guard let title: String = copy(window, kAXTitleAttribute), matches(title) else { continue }
+      AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+      AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+      NSRunningApplication(processIdentifier: observedPID)?.activate()
+      return true
+    }
+    return false
+  }
+
   /// Finds the window server's number for a window by owner and bounds. `nil`
   /// when it is not on screen, for example on another Space.
   private static func onScreenWindowNumber(pid: pid_t, axFrame: CGRect) -> Int? {

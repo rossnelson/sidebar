@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let preferences = Preferences()
   private lazy var settings = SettingsWindowController(preferences: preferences)
   private let toast = ToastController()
+  private let preview = PreviewController()
   /// Copy the current URL. Registered only while Chrome is frontmost.
   private var copyURL: HotKey?
   private var peekHideTimer: Timer?
@@ -77,6 +78,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     model.toggleCollapse = { [weak self] in self?.toggleCollapse() }
     model.setPeeking = { [weak self] in self?.setPeeking($0) }
+    model.switchSpace = { [weak self] in self?.switchSpace(to: $0) }
+    model.notify = { [weak self] message, symbol in
+      guard let self else { return }
+      toast.show(message, systemImage: symbol, over: windowFrame)
+    }
+    model.showPreview = { [weak self] tab, row in
+      guard let self else { return }
+      guard let tab else {
+        model.isPreviewing = false
+        return preview.hide()
+      }
+      let window: NSWindow = model.isPeeking ? peekPanel : panel
+      guard window.isVisible else { return }
+      preview.show(tab, row: row, in: window, snapshot: model.snapshot, appearance: model.theme.appearance)
+      model.isPreviewing = true
+    }
     model.openPalette = { [weak self] in
       guard let self else { return }
       palette.show(over: windowFrame)
@@ -115,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }) { moveMonitors.append(local) }
 
     model.loadFavorites()
+    model.refreshSpaces()
     model.refreshTheme()
     model.refreshBookmarks()
     model.refreshRecents()
@@ -132,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     schedule(every: 5) { [weak self] in
       self?.model.refreshBookmarks()
       self?.model.refreshTheme()
+      self?.model.refreshSpaces()
     }
     FaviconCache.shared.reload(profileDirectory: model.profileDirectory)
     schedule(every: 15) { [weak self] in
@@ -226,11 +245,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     frameRect = sidebar
   }
 
+  // MARK: - Spaces
+
+  /// Brings the space's Chrome window to the front. With no window open for
+  /// that profile, asks Chrome to open one, as its profile menu does.
+  private func switchSpace(to space: SidebarModel.Space) {
+    guard space.directory != model.spaceDirectory else { return }
+    let base = ChromeProfile.defaultBase
+    let profiles = (try? Data(contentsOf: base.appending(path: "Local State")))
+      .map(ChromeProfiles.parse(localState:)) ?? []
+    let raised = tracker.raiseWindow { title in
+      ChromeProfiles.directory(forWindowTitle: title, profiles: profiles) == space.directory
+    }
+    guard !raised else { return }
+    let open = Process()
+    open.executableURL = URL(filePath: "/usr/bin/open")
+    open.arguments = ["-nb", ChromeScripts.bundleID, "--args", "--profile-directory=\(space.directory)"]
+    do {
+      try open.run()
+    } catch {
+      toast.show("Could not open \(space.name)", systemImage: "exclamationmark.triangle", over: windowFrame)
+    }
+  }
+
   // MARK: - Collapse and peek
 
   /// Collapses to a thin strip or expands. Chrome's left edge slides, and the
   /// sidebar slides with it: off the screen to the left, or back in.
   private func toggleCollapse() {
+    model.showPreview(nil, .zero)
     hidePeek(animated: false)
     model.isCollapsed.toggle()
     guard let window = chromeWindow else { return }
@@ -300,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// Slides the peek back off the screen's left edge, or removes it at once.
   private func hidePeek(animated: Bool = true) {
+    model.showPreview(nil, .zero)
     peekHideTimer?.invalidate()
     peekHideTimer = nil
     model.isPeeking = false

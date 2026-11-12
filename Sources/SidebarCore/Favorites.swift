@@ -67,4 +67,27 @@ public struct FavoritesStore: Sendable {
     }
     return favorites + [favorite]
   }
+
+  /// Moves a favorite to the place of `target`, or to the end when `target` is `nil`.
+  /// Dropping a favorite on itself changes nothing.
+  public static func moving(_ id: UUID, to target: UUID?, in favorites: [Favorite]) -> [Favorite] {
+    guard id != target, let from = favorites.firstIndex(where: { $0.id == id }) else { return favorites }
+    var next = favorites
+    let moved = next.remove(at: from)
+    guard let target, let to = favorites.firstIndex(where: { $0.id == target }) else {
+      return next + [moved]
+    }
+    // Moving right puts the favorite after the target; moving left, before it.
+    next.insert(moved, at: to)
+    return next
+  }
+}
+
+/// Arc's "Clear": the tabs to close, which are all but the active tab and
+/// the tabs that favorites stand for.
+public enum TabCleanup {
+  public static func idsToClose(in tabs: [ChromeTab], activeID: Int?, favorites: [Favorite]) -> [Int] {
+    let kept = Set(favorites.compactMap { $0.matchingTab(in: tabs)?.id } + [activeID].compactMap { $0 })
+    return tabs.map(\.id).filter { !kept.contains($0) }
+  }
 }

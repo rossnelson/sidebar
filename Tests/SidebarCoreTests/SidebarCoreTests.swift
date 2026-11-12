@@ -513,3 +513,40 @@ private typealias M = KeyRouting.Modifiers
     #expect(try JSONDecoder().decode(Shortcut.self, from: data) == shortcut)
   }
 }
+
+@Suite struct FavoriteOrder {
+  let a = Favorite(url: "https://a.com", title: "A")
+  let b = Favorite(url: "https://b.com", title: "B")
+  let c = Favorite(url: "https://c.com", title: "C")
+
+  @Test func `moving right lands after the target`() {
+    #expect(FavoritesStore.moving(a.id, to: c.id, in: [a, b, c]) == [b, c, a])
+  }
+
+  @Test func `moving left lands before the target`() {
+    #expect(FavoritesStore.moving(c.id, to: a.id, in: [a, b, c]) == [c, a, b])
+  }
+
+  @Test func `no target moves to the end, the same tile changes nothing`() {
+    #expect(FavoritesStore.moving(a.id, to: nil, in: [a, b, c]) == [b, c, a])
+    #expect(FavoritesStore.moving(b.id, to: b.id, in: [a, b, c]) == [a, b, c])
+  }
+}
+
+@Suite struct ClearTabs {
+  @Test func `keeps the active tab and the tabs of favorites`() {
+    let tabs = [
+      ChromeTab(id: 1, title: "Mail", url: "https://mail.google.com/"),
+      ChromeTab(id: 2, title: "PR", url: "https://github.com/pulls"),
+      ChromeTab(id: 3, title: "Docs", url: "https://docs.swift.org/"),
+      ChromeTab(id: 4, title: "News", url: "https://news.ycombinator.com/"),
+    ]
+    let favorites = [Favorite(url: "https://github.com/", title: "GitHub")]
+    #expect(TabCleanup.idsToClose(in: tabs, activeID: 3, favorites: favorites) == [1, 4])
+  }
+
+  @Test func `the close script names each tab as text`() {
+    let script = ChromeScripts.closeTabs(ids: [7, 9])
+    #expect(script.contains(#"{"7", "9"}"#))
+  }
+}
