@@ -10,7 +10,10 @@ Chrome window, with:
 - a grid of favorites for each Chrome profile ("space"); drag to add or reorder
 - a space switcher: one letter icon per Chrome profile, or a two-finger swipe
 - a preview card with the full title and address when the pointer rests on a tab
-- **Clear**, which closes every tab except the active tab and the tabs of favorites
+- pinned tabs for each space, which keep their own URL
+- **Clear**, which closes every tab except the active tab, pinned tabs and the tabs of favorites
+- auto-archive: tabs that you have not used for 12 hours close, and the ⌘T palette finds them again
+- commands in the ⌘T palette: type `>`
 - a ⌘T palette that searches tabs, bookmarks and history, or opens a URL or a web search
 - back, forward and reload buttons, and an address pill that opens the palette
 
@@ -190,11 +193,33 @@ no open window, Sidebar asks Chrome to open one with
 request that Chrome's own profile menu makes. The running Chrome opens the
 window; nothing else changes.
 
-## Clear
+## Pinned tabs
+
+Right-click a tab and choose **Pin Tab**, or type `> pin` in the palette. Pinned
+tabs show above your other tabs and stay when you close their tab: click a dimmed
+pin to open it again. When a pinned tab goes to another page, a ↩ button takes it
+back to the pinned page. Drag a pin onto another pin to reorder them.
+
+## Clear and auto-archive
 
 Move the pointer over the space name above your tabs and click **Clear**. Sidebar
-closes every tab except the active tab and the tabs that your favorites point to.
-To get a tab back, press ⇧⌘T in Chrome.
+closes every tab except the active tab, pinned tabs and the tabs that your
+favorites point to.
+
+Sidebar also closes tabs that you have not opened for 12 hours, with the same
+exceptions. Change the time, or turn this off, in **Settings… → Tabs**. Sidebar
+counts the time from when it started, so it never closes a tab in its first
+12 hours.
+
+Sidebar keeps the last 200 closed tabs for each space in
+`~/Library/Application Support/Sidebar/archive-<profile folder>.json`. Search for
+one in the ⌘T palette (it shows **Archived**) to open it again.
+
+## Palette commands
+
+Type `>` in the ⌘T palette to list commands: Clear Tabs, Pin Current Tab, Add
+Current Tab to Favorites, Copy URL, Collapse Sidebar, Switch to <space>, Reload
+Bookmarks and History, and Open Settings. Type after `>` to filter them.
 
 ## Development
 
