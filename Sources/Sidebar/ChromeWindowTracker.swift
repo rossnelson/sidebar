@@ -107,9 +107,24 @@ final class ChromeWindowTracker {
   /// position and drops the move. So change one value, wait until Chrome reports
   /// it, then change the next. Shrink before moving and move before growing, so
   /// the window never hangs off the screen (macOS would clamp it).
-  func moveCurrentWindow(to frame: CGRect) async {
+  func moveCurrentWindow(to frame: CGRect, animated: Bool = false) async {
     guard let window = currentWindow else { return }
     let target = ScreenCoordinates.flip(frame, primaryScreenHeight: Self.primaryScreenHeight)
+
+    // While an assistive app (a password manager, a grammar checker) has turned
+    // on AXEnhancedUserInterface, macOS animates each move and each resize, so
+    // the window visibly slides and then grows. Turn it off for the change and
+    // restore it afterwards, as window managers do.
+    let enhancedUI = "AXEnhancedUserInterface" as CFString
+    let wasEnhanced = appElement.flatMap { copy($0, enhancedUI as String) as Bool? } ?? false
+    if wasEnhanced, let appElement { AXUIElementSetAttributeValue(appElement, enhancedUI, kCFBooleanFalse) }
+    defer {
+      if wasEnhanced, let appElement { AXUIElementSetAttributeValue(appElement, enhancedUI, kCFBooleanTrue) }
+    }
+
+    if animated, let start = frameInAXCoordinates(of: window) {
+      await slideLeftEdge(of: window, from: start, to: target)
+    }
 
     for _ in 0..<3 {
       guard let current = frameInAXCoordinates(of: window) else { return }
@@ -121,6 +136,35 @@ final class ChromeWindowTracker {
       } else {
         await setPosition(target.origin, of: window)
         await setSize(target.size, of: window)
+      }
+    }
+  }
+
+  /// Slides the left edge from `start` to `target` over about a quarter of a
+  /// second, easing out, while the right edge stays where it is. Each step sets
+  /// the position and the size together. Both frames are in AX coordinates.
+  /// Does nothing unless only the left edge changes (showing or hiding the sidebar).
+  private func slideLeftEdge(of window: AXUIElement, from start: CGRect, to target: CGRect) async {
+    guard abs(start.maxX - target.maxX) <= 1, abs(start.minY - target.minY) <= 1,
+      abs(start.height - target.height) <= 1
+    else { return }
+    let duration = 0.24
+    let began = Date()
+    var progress = 0.0
+    while progress < 1 {
+      progress = min(Date().timeIntervalSince(began) / duration, 1)
+      let eased = 1 - pow(1 - progress, 3)
+      let x = (start.minX + (target.minX - start.minX) * eased).rounded()
+      let step = CGRect(x: x, y: start.minY, width: start.maxX - x, height: start.height)
+      // Growing to the left: move, then widen. Shrinking from the left: narrow,
+      // then move. The other order would push the right edge off the screen,
+      // and macOS refuses that.
+      if step.width > (frameInAXCoordinates(of: window)?.width ?? 0) {
+        await setPosition(step.origin, of: window)
+        await setSize(step.size, of: window)
+      } else {
+        await setSize(step.size, of: window)
+        await setPosition(step.origin, of: window)
       }
     }
   }
@@ -141,9 +185,9 @@ final class ChromeWindowTracker {
 
   /// Polls the current window's frame (AX coordinates) for up to 300 ms.
   private func waitUntil(_ done: (CGRect) -> Bool) async {
-    for _ in 0..<15 {
+    for _ in 0..<75 {
       if let window = currentWindow, let frame = frameInAXCoordinates(of: window), done(frame) { return }
-      try? await Task.sleep(for: .milliseconds(20))
+      try? await Task.sleep(for: .milliseconds(4))
     }
   }
 

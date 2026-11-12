@@ -32,6 +32,15 @@ final class SidebarPanel: NSPanel {
 
   override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
+
+  /// A click would bring the drawer in front of Chrome until it is put back
+  /// below. Keep the window order as it is.
+  override func sendEvent(_ event: NSEvent) {
+    if event.type == .leftMouseDown || event.type == .rightMouseDown {
+      NSApp.preventWindowOrdering()
+    }
+    super.sendEvent(event)
+  }
 }
 
 /// The sidebar sliding out over Chrome's left edge while collapsed.

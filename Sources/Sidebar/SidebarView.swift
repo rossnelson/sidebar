@@ -16,7 +16,9 @@ struct FrameView: View {
       RoundedRectangle(cornerRadius: FrameView.outerCornerRadius, style: .continuous)
         .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark))
 
-      if model.isCollapsed {
+      // The visible width, not `isCollapsed`: while collapsing, the drawer keeps
+      // its content until Chrome has covered it.
+      if model.frameHole.minX < 40 {
         // The left border: hovering it slides the sidebar out over Chrome.
         Color.clear
           .frame(width: max(model.frameHole.minX, 0))

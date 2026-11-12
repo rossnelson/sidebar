@@ -118,7 +118,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.refreshBookmarks()
     model.refreshRecents()
     schedule(every: 1) { [weak self] in
-      guard let self, panel.isVisible, chromeWindow?.isChromeFrontmost == true else { return }
+      guard let self else { return }
+      // Recover from a missed Accessibility event (for example when a window
+      // closes): while hidden, look for Chrome's window again.
+      guard panel.isVisible else {
+        if Date() > settleUntil { tracker.update() }
+        return
+      }
+      guard chromeWindow?.isChromeFrontmost == true else { return }
       model.refreshTabs()
     }
     schedule(every: 5) { [weak self] in
@@ -222,26 +229,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if model.isCollapsed {
       frame.origin.x -= delta
       frame.size.width += delta
+      // Chrome grows over the drawer first; the drawer shrinks once it is
+      // covered (the layout after the move), so both look like one motion.
+      moveChrome(to: frame, animated: true)
     } else {
       frame.origin.x += delta
       frame.size.width -= delta
+      // The drawer opens under Chrome first, then Chrome's edge moves off it.
+      window.frame = frame
+      layout(window)
+      moveChrome(to: frame, animated: true)
     }
-    moveChrome(to: frame)
-    // Draw the frame at the final size now; Chrome's own events are ignored while it settles.
-    window.frame = frame
-    layout(window)
   }
 
   /// Moves Chrome's window step by step, ignoring its events until the move is
   /// done, then lays out once from where it really ended up.
-  private func moveChrome(to frame: CGRect) {
+  private func moveChrome(to frame: CGRect, animated: Bool = false) {
     layoutLog.debug("moveChrome to \(String(describing: frame), privacy: .public)")
     requestedFrame = frame
     settleUntil = .distantFuture
     moveTask?.cancel()
     moveTask = Task { [weak self] in
       guard let self else { return }
-      await tracker.moveCurrentWindow(to: frame)
+      await tracker.moveCurrentWindow(
+        to: frame, animated: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
       guard !Task.isCancelled else { return }
       settleUntil = .distantPast
       tracker.update()
