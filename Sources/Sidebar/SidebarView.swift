@@ -177,8 +177,10 @@ struct SidebarView: View {
       }
 
       if model.spaces.count > 1 {
-        SpaceSwitcher(spaces: model.spaces, current: model.spaceDirectory, onSwitch: model.switchSpace)
-          .padding(.bottom, 10)
+        SpaceSwitcher(
+          spaces: model.spaces, current: model.spaceDirectory,
+          onSwitch: model.switchSpace, onSettings: model.openSettings)
+          .padding(.bottom, 8)
           .cascadeIn(delay: 0.22)
       }
     }
@@ -536,32 +538,33 @@ private struct ClearButton: View {
   }
 }
 
-/// One dot per Chrome profile, in the profile's colors. A click brings that
-/// profile's window to the front.
+/// One letter icon per Chrome profile, like Arc's space bar, and a settings
+/// button. A click brings that profile's window to the front.
 private struct SpaceSwitcher: View {
   let spaces: [SidebarModel.Space]
   let current: String
   let onSwitch: (SidebarModel.Space) -> Void
-  @Namespace private var ring
+  let onSettings: () -> Void
+  @Namespace private var selection
 
   var body: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: 4) {
       ForEach(spaces) { space in
-        SpaceDot(space: space, isCurrent: space.directory == current, ring: ring) { onSwitch(space) }
+        SpaceIcon(space: space, isCurrent: space.directory == current, selection: selection) { onSwitch(space) }
       }
+      Spacer(minLength: 0)
+      IconButton(symbol: "gearshape", help: "Settings", action: onSettings)
     }
-    .padding(.horizontal, 6)
-    .padding(.vertical, 4)
-    .background(.white.opacity(0.1), in: Capsule())
-    .frame(maxWidth: .infinity)
+    .padding(.leading, 4)
+    .frame(height: 30)
     .motion(Motion.glide, value: current)
   }
 }
 
-private struct SpaceDot: View {
+private struct SpaceIcon: View {
   let space: SidebarModel.Space
   let isCurrent: Bool
-  let ring: Namespace.ID
+  let selection: Namespace.ID
   let onTap: () -> Void
   @State private var hovering = false
   @Environment(\.colorScheme) private var colorScheme
@@ -569,28 +572,40 @@ private struct SpaceDot: View {
   var body: some View {
     let palette = SpaceColors.palette(for: space.theme, dark: colorScheme == .dark)
     Button(action: onTap) {
-      ZStack {
-        if isCurrent {
-          Circle()
-            .strokeBorder(.white, lineWidth: 1.5)
-            .matchedGeometryEffect(id: "current-space", in: ring)
+      Text(letter)
+        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+        .foregroundStyle(isCurrent ? Color(palette.ink) : .white.opacity(hovering ? 1 : 0.75))
+        .frame(width: 24, height: 24)
+        .background {
+          if isCurrent {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+              .fill(.white.opacity(0.94))
+              .shadow(color: .black.opacity(0.14), radius: 1.5, y: 1)
+              .matchedGeometryEffect(id: "current-space", in: selection)
+          } else {
+            // The space's own colors show under the pointer.
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+              .fill(LinearGradient(
+                colors: [Color(palette.gradientStart), Color(palette.gradientEnd)],
+                startPoint: .topLeading, endPoint: .bottomTrailing))
+              .opacity(hovering ? 1 : 0)
+              .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                  .strokeBorder(.white.opacity(hovering ? 0.35 : 0.22), lineWidth: 1))
+          }
         }
-        Circle()
-          .fill(LinearGradient(
-            colors: [Color(palette.gradientStart), Color(palette.gradientEnd)],
-            startPoint: .topLeading, endPoint: .bottomTrailing))
-          .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 0.5))
-          .padding(isCurrent ? 4 : 5)
-          .shadow(color: .black.opacity(0.2), radius: 1.5, y: 1)
-      }
-      .frame(width: 22, height: 22)
-      .scaleEffect(hovering ? 1.15 : 1)
-      .contentShape(Circle())
+        .scaleEffect(hovering && !isCurrent ? 1.08 : 1)
+        .contentShape(Rectangle())
     }
-    .buttonStyle(PressStyle(scale: 0.85))
+    .buttonStyle(PressStyle(scale: 0.86))
     .onHover { hovering = $0 }
     .motion(Motion.press, value: hovering)
     .help(isCurrent ? space.name : "Switch to \(space.name)")
+  }
+
+  /// The first letter of the profile's name: Work → W.
+  private var letter: String {
+    space.name.first { $0.isLetter || $0.isNumber }.map { String($0).uppercased() } ?? "•"
   }
 }
 

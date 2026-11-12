@@ -43,6 +43,8 @@ final class SidebarModel {
   @ObservationIgnored var showPreview: (ChromeTab?, CGRect) -> Void = { _, _ in }
   /// The preview card is on screen, so the next row shows its card at once.
   @ObservationIgnored var isPreviewing = false
+  /// Opens the Settings window. Set by the app delegate.
+  @ObservationIgnored var openSettings: () -> Void = {}
   /// Shows a short message over Chrome. Set by the app delegate.
   @ObservationIgnored var notify: (String, String) -> Void = { _, _ in }
 
@@ -201,6 +203,13 @@ final class SidebarModel {
     } catch {
       log.error("Favorites save failed: \(String(describing: error), privacy: .public)")
     }
+  }
+
+  /// The space before (`-1`) or after (`1`) the current one, for a swipe.
+  func neighborSpace(_ step: Int) -> Space? {
+    guard let index = spaces.firstIndex(where: { $0.directory == spaceDirectory }) else { return nil }
+    let next = index + step
+    return spaces.indices.contains(next) ? spaces[next] : nil
   }
 
   /// Moves a favorite to another favorite's place, or to the end.

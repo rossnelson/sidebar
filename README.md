@@ -8,7 +8,7 @@ Chrome window, with:
 - your open tabs
 - your Chrome bookmarks (synced and local)
 - a grid of favorites for each Chrome profile ("space"); drag to add or reorder
-- a space switcher: one colored dot per Chrome profile
+- a space switcher: one letter icon per Chrome profile, or a two-finger swipe
 - a preview card with the full title and address when the pointer rests on a tab
 - **Clear**, which closes every tab except the active tab and the tabs of favorites
 - a ⌘T palette that searches tabs, bookmarks and history, or opens a URL or a web search
@@ -182,8 +182,9 @@ Sidebar saves favorites in
 ## Spaces
 
 Each Chrome profile is a space, with its own colors and favorites. When Chrome
-has more than one profile, dots at the bottom of the sidebar show each space.
-Click a dot to bring that profile's window to the front. When that profile has
+has more than one profile, letter icons at the bottom of the sidebar show each
+space. Click an icon, or swipe left or right with two fingers on the sidebar, to
+bring that profile's window to the front. When that profile has
 no open window, Sidebar asks Chrome to open one with
 `open -nb com.google.Chrome --args --profile-directory=<folder>`, the same
 request that Chrome's own profile menu makes. The running Chrome opens the

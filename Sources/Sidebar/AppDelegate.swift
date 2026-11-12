@@ -25,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Copy the current URL. Registered only while Chrome is frontmost.
   private var copyURL: HotKey?
   private var peekHideTimer: Timer?
+  private var swipeMonitor: Any?
+  /// Horizontal and vertical travel of the current trackpad gesture.
+  private var swipe = CGSize.zero
   /// Counts peek shows and hides, so an old slide-out does not hide a new peek.
   private var peekGeneration = 0
   /// Our frame window's last frame, for placing the peek.
@@ -79,6 +82,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.toggleCollapse = { [weak self] in self?.toggleCollapse() }
     model.setPeeking = { [weak self] in self?.setPeeking($0) }
     model.switchSpace = { [weak self] in self?.switchSpace(to: $0) }
+    model.openSettings = { [weak self] in self?.settings.show() }
+    // A two-finger swipe across the sidebar moves to the next or previous space.
+    swipeMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+      MainActor.assumeIsolated { self?.trackSwipe(event) }
+      return event
+    }
     model.notify = { [weak self] message, symbol in
       guard let self else { return }
       toast.show(message, systemImage: symbol, over: windowFrame)
@@ -265,6 +274,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       try open.run()
     } catch {
       toast.show("Could not open \(space.name)", systemImage: "exclamationmark.triangle", over: windowFrame)
+    }
+  }
+
+  /// Adds up a trackpad gesture over the sidebar. A mostly horizontal gesture
+  /// of 60 pt or more switches space when the fingers lift.
+  private func trackSwipe(_ event: NSEvent) {
+    guard event.window === panel || event.window === peekPanel, event.hasPreciseScrollingDeltas else { return }
+    switch event.phase {
+    case .began:
+      swipe = .zero
+    case .changed:
+      swipe.width += event.scrollingDeltaX
+      swipe.height += event.scrollingDeltaY
+    case .ended:
+      defer { swipe = .zero }
+      guard abs(swipe.width) >= 60, abs(swipe.width) > abs(swipe.height) * 2 else { return }
+      // Fingers moving left show the next space, as in Arc.
+      if let space = model.neighborSpace(swipe.width < 0 ? 1 : -1) { switchSpace(to: space) }
+    default:
+      break
     }
   }
 
