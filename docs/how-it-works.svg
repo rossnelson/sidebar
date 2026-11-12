@@ -23,30 +23,28 @@
 
   <!-- desktop -->
   <rect x="40" y="128" width="560" height="236" rx="10" fill="#EEF0F3"/>
-  <!-- Sidebar's window: the frame -->
-  <rect x="56" y="142" width="528" height="208" rx="14" fill="url(#space)"/>
+  <!-- Sidebar's window: the drawer, partly under Chrome -->
+  <rect x="56" y="160" width="172" height="172" rx="12" fill="url(#space)"/>
   <!-- sidebar contents -->
-  <rect x="66" y="154" width="128" height="16" rx="8" fill="#FFFFFF" fill-opacity="0.35"/>
+  <rect x="66" y="170" width="128" height="16" rx="8" fill="#FFFFFF" fill-opacity="0.35"/>
   <g fill="#FFFFFF" fill-opacity="0.3">
-    <rect x="66" y="180" width="28" height="22" rx="6"/>
-    <rect x="99" y="180" width="28" height="22" rx="6"/>
-    <rect x="132" y="180" width="28" height="22" rx="6"/>
-    <rect x="165" y="180" width="28" height="22" rx="6"/>
+    <rect x="66" y="194" width="28" height="22" rx="6"/>
+    <rect x="99" y="194" width="28" height="22" rx="6"/>
+    <rect x="132" y="194" width="28" height="22" rx="6"/>
+    <rect x="165" y="194" width="28" height="22" rx="6"/>
   </g>
   <g fill="#FFFFFF" fill-opacity="0.22">
-    <rect x="66" y="214" width="110" height="8" rx="4"/>
-    <rect x="66" y="230" width="96" height="8" rx="4"/>
-    <rect x="66" y="246" width="118" height="8" rx="4"/>
+    <rect x="66" y="226" width="110" height="8" rx="4"/>
+    <rect x="66" y="242" width="96" height="8" rx="4"/>
   </g>
-  <rect x="66" y="266" width="128" height="1" fill="#FFFFFF" fill-opacity="0.4"/>
-  <rect x="66" y="276" width="128" height="16" rx="5" fill="#FFFFFF" fill-opacity="0.55"/>
+  <rect x="66" y="260" width="128" height="1" fill="#FFFFFF" fill-opacity="0.4"/>
+  <rect x="66" y="270" width="128" height="16" rx="5" fill="#FFFFFF" fill-opacity="0.55"/>
   <g fill="#FFFFFF" fill-opacity="0.22">
-    <rect x="66" y="298" width="128" height="16" rx="5"/>
-    <rect x="66" y="320" width="128" height="16" rx="5"/>
+    <rect x="66" y="292" width="128" height="16" rx="5"/>
   </g>
 
   <!-- Chrome's own window, in the hole -->
-  <rect x="204" y="150" width="372" height="192" rx="11" fill="#FFFFFF" stroke="#C9CDD2"/>
+  <rect x="204" y="150" width="372" height="192" rx="11" fill="#FFFFFF" stroke="#C9CDD2" filter="drop-shadow(-3px 2px 5px rgba(0,0,0,0.25))"/>
   <path d="M204,161 a11,11 0 0 1 11,-11 h350 a11,11 0 0 1 11,11 v15 h-372 z" fill="#DEE1E6"/>
   <circle cx="218" cy="163" r="4" fill="#FF5F57"/>
   <circle cx="231" cy="163" r="4" fill="#FEBC2E"/>
@@ -60,8 +58,8 @@
   <text x="390" y="282" text-anchor="middle" font-size="12" fill="#59636E">unchanged · your tabs, extensions and sync</text>
 
   <!-- callouts -->
-  <circle cx="130" cy="342" r="5" fill="#6E56CF" stroke="#FFFFFF" stroke-width="2"/>
-  <path d="M130,342 V376 H636" fill="none" stroke="#6E56CF" stroke-width="1.5"/>
+  <circle cx="130" cy="324" r="5" fill="#6E56CF" stroke="#FFFFFF" stroke-width="2"/>
+  <path d="M130,324 V376 H636" fill="none" stroke="#6E56CF" stroke-width="1.5"/>
   <circle cx="568" cy="232" r="5" fill="#1A73E8" stroke="#FFFFFF" stroke-width="2"/>
   <path d="M568,232 H636" fill="none" stroke="#1A73E8" stroke-width="1.5"/>
 
@@ -73,8 +71,8 @@
 
     <rect x="636" y="320" width="324" height="78" rx="10" fill="#F0EDFC"/>
     <text x="652" y="344" font-weight="700" fill="#6E56CF">Sidebar's window</text>
-    <text x="652" y="364">A separate app draws the frame and the</text>
-    <text x="652" y="382">sidebar around Chrome, not inside it.</text>
+    <text x="652" y="364">A separate app draws the sidebar next to</text>
+    <text x="652" y="382">Chrome, tucked under it, not inside it.</text>
   </g>
 
   <!-- ============ Section 2: how they talk ============ -->
@@ -86,7 +84,7 @@
   <g font-size="12.5" fill="#1F2328">
     <text x="58" y="506" fill="#59636E">You build it from this repo.</text>
     <text x="58" y="524" fill="#59636E">Its own process.</text>
-    <text x="58" y="556">• Draws the frame and sidebar</text>
+    <text x="58" y="556">• Draws the sidebar</text>
     <text x="58" y="578">• Keeps favorites in its own</text>
     <text x="68" y="594">folder</text>
     <text x="58" y="616">• Quit it: Chrome keeps</text>

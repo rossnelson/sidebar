@@ -7,8 +7,12 @@ private let layoutLog = Logger(subsystem: "com.ross.sidebar", category: "layout"
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   static let sidebarWidth: CGFloat = 260
-  /// The frame's width on Chrome's other three sides.
+  /// The drawer's visible width while collapsed: an edge to hover for the peek.
   static let margin: CGFloat = 8
+  /// How far the drawer reaches under Chrome's left edge, hiding its right corners.
+  static let drawerOverlap: CGFloat = 24
+  /// How much shorter the drawer is than Chrome at the top and the bottom.
+  static let drawerInset: CGFloat = 10
 
   private let model = SidebarModel()
   private let tracker = ChromeWindowTracker()
@@ -139,24 +143,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? NSScreen.main
     let visible = screen?.visibleFrame ?? window.frame
-    let layout = FrameLayout.compute(
-      window: window.frame, screen: visible,
-      sidebarWidth: model.isCollapsed ? Self.margin : Self.sidebarWidth, margin: Self.margin)
+    let width = model.isCollapsed ? Self.margin : Self.sidebarWidth
+    // Chrome fills the screen right of the sidebar; no border around it.
+    let layout = FrameLayout.compute(window: window.frame, screen: visible, sidebarWidth: width, margin: 0)
     // Correct the window once per move by the person; never chase Chrome's settling.
     if let moved = layout.windowFrame,
       !(requestedFrame?.isClose(to: window.frame, within: 12) ?? false)
     {
       moveChrome(to: moved)
     }
+    let drawer = FrameLayout.drawer(
+      beside: layout.hole, visibleWidth: width, overlap: Self.drawerOverlap, inset: Self.drawerInset)
     panel.appearance = model.theme.appearance
-    model.frameHole = layout.holeInFrame
-    panel.setFrame(layout.frame, display: true)
-    frameRect = layout.frame
+    // The part of the drawer under Chrome, in the drawer's own coordinates.
+    model.frameHole = CGRect(x: width, y: 0, width: Self.drawerOverlap, height: drawer.height)
+    panel.setFrame(drawer, display: true)
+    frameRect = drawer
     holeRect = layout.hole
     updateMousePassThrough()
-    // Sit directly below Chrome's window. Chrome is then the top window over its
-    // own area, so window pickers (screenshots, screen recording) choose Chrome
-    // there and the frame only around it. Other apps' windows still cover both.
+    // Sit directly below Chrome's window, so the drawer comes out from under it
+    // and window pickers (screenshots, screen recording) choose Chrome over its
+    // own area. Other apps' windows still cover both.
     let wasVisible = panel.isVisible
     panel.order(.below, relativeTo: window.windowNumber)
     if !wasVisible { model.refreshTabs() }
@@ -204,8 +211,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: - Collapse and peek
 
-  /// Collapses to the border or expands, moving Chrome's window into or out of
-  /// the sidebar's space so the whole frame keeps its size.
+  /// Collapses to a thin edge or expands, moving Chrome's window into or out of
+  /// the sidebar's space so the two keep their total width.
   private func toggleCollapse() {
     hidePeek()
     model.isCollapsed.toggle()
@@ -257,9 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.isPeeking = true
     peekPanel.appearance = model.theme.appearance
     peekPanel.setFrame(
-      CGRect(
-        x: frameRect.minX + 4, y: frameRect.minY + Self.margin,
-        width: Self.sidebarWidth - 8, height: frameRect.height - Self.margin * 2),
+      CGRect(x: frameRect.minX, y: frameRect.minY, width: Self.sidebarWidth - 8, height: frameRect.height),
       display: true)
     peekPanel.orderFrontRegardless()
     model.refreshTabs()

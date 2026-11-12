@@ -2,8 +2,8 @@
 
 An Arc-style frame and sidebar for Google Chrome on macOS.
 
-Sidebar is a small menu-bar app. It draws a colored frame around your Chrome
-window and puts a sidebar on the left with:
+Sidebar is a small menu-bar app. It puts a sidebar on the left of your Chrome
+window, tucked under Chrome's left edge like a drawer, with:
 
 - your open tabs
 - your Chrome bookmarks (synced and local)
@@ -11,7 +11,7 @@ window and puts a sidebar on the left with:
 - a ⌘T palette that searches tabs, bookmarks and history, or opens a URL or a web search
 - back, forward and reload buttons, and an address pill that opens the palette
 
-The frame color comes from the theme color of the Chrome profile that owns the
+The sidebar color comes from the theme color of the Chrome profile that owns the
 window, so each profile gets its own look.
 
 ![Sidebar is a separate app next to an unmodified Chrome. It talks to Chrome only through macOS Accessibility, Apple Events, keystrokes and read-only file reads.](docs/how-it-works.svg)
@@ -19,7 +19,7 @@ window, so each profile gets its own look.
 ## A sidecar, not a wrapper
 
 Sidebar does not contain, embed or modify Chrome. It is a separate app that
-draws its own window around Chrome's window. You keep using the real Google
+draws its own window next to Chrome's window, just below it. You keep using the real Google
 Chrome that you installed from Google.
 
 **Chrome stays as it is:**
@@ -157,7 +157,7 @@ These shortcuts work only while Chrome is the front app, so other apps keep thei
 | --- | --- |
 | ⌘T | Open the palette: search tabs, bookmarks and history, or type a URL or search |
 | ⇧⌘C | Copy the current tab's URL. You can change this shortcut in Settings. |
-| ⌃⌘S | Collapse or expand the sidebar. When collapsed, move the pointer to the left edge to peek. |
+| ⌃⌘S | Collapse or expand the sidebar. When collapsed, a thin edge stays visible; move the pointer over it to peek. |
 
 In the palette, Chrome's own ⌘ shortcuts still work. The palette closes and
 sends the key to Chrome.

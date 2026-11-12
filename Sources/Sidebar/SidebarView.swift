@@ -2,22 +2,19 @@ import AppKit
 import SidebarCore
 import SwiftUI
 
-/// The whole frame: the space's gradient with a hole for Chrome, and the sidebar.
+/// The drawer: the space's gradient and the sidebar. Its right part
+/// (`frameHole`) lies under Chrome's window.
 struct FrameView: View {
   let model: SidebarModel
   @Environment(\.colorScheme) private var colorScheme
 
-  /// Chrome's window corner on macOS 26, measured from its window shape:
-  /// a continuous corner, 23 pt along each edge.
-  nonisolated static let chromeCornerRadius: CGFloat = 22.5
-  /// The frame's own corners. Arc keeps these tighter than the content's
-  /// corners; a fully concentric 30.5 pt looked too round.
+  /// The drawer's corners.
   nonisolated static let outerCornerRadius: CGFloat = 16
 
   var body: some View {
     ZStack(alignment: .topLeading) {
-      FrameShape(hole: model.frameHole)
-        .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark), style: FillStyle(eoFill: true))
+      RoundedRectangle(cornerRadius: FrameView.outerCornerRadius, style: .continuous)
+        .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark))
 
       if model.isCollapsed {
         // The left border: hovering it slides the sidebar out over Chrome.
@@ -52,26 +49,6 @@ struct PeekView: View {
       .foregroundStyle(.white)
       .environment(\.sidebarColors, SpaceColors.rows)
       .onHover { model.setPeeking($0) }
-  }
-}
-
-/// A rounded rectangle with a rounded hole, filled even-odd.
-private struct FrameShape: Shape {
-  var hole: CGRect
-
-  func path(in rect: CGRect) -> Path {
-    var path = Path()
-    path.addRoundedRect(
-      in: rect,
-      cornerSize: CGSize(width: FrameView.outerCornerRadius, height: FrameView.outerCornerRadius),
-      style: .continuous)
-    if hole.width > 0, hole.height > 0 {
-      path.addRoundedRect(
-        in: hole,
-        cornerSize: CGSize(width: FrameView.chromeCornerRadius, height: FrameView.chromeCornerRadius),
-        style: .continuous)
-    }
-    return path
   }
 }
 
