@@ -23,6 +23,12 @@ public struct Favorite: Codable, Identifiable, Sendable, Equatable {
     return tab.title.isEmpty ? tab.url : tab.title
   }
 
+  /// A copy that points at the tab's current page, with its title. The
+  /// person's name goes too, so the row shows the new page's title and icon.
+  public func moved(to tab: ChromeTab) -> Favorite {
+    Favorite(id: id, url: tab.url, title: tab.title.isEmpty ? tab.url : tab.title)
+  }
+
   /// A copy with `newName`, trimmed. An empty name removes the name, so the
   /// row shows the page title again.
   public func renamed(_ newName: String) -> Favorite {

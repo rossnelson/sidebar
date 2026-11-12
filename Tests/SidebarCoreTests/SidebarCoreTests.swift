@@ -682,6 +682,16 @@ private typealias M = KeyRouting.Modifiers
     #expect(pin.renamed("Docs").label(for: tab) == "Docs")
   }
 
+  @Test func movingToCurrentPageTakesItsURLAndTitleAndDropsTheName() {
+    let tab = ChromeTab(id: 1, title: "New Page", url: "https://other.test/x")
+    let moved = pin.renamed("Docs").moved(to: tab)
+    #expect(moved.id == pin.id)
+    #expect(moved.url == tab.url)
+    #expect(moved.title == "New Page")
+    #expect(moved.name == nil)
+    #expect(pin.moved(to: ChromeTab(id: 2, title: "", url: "https://y.test/")).title == "https://y.test/")
+  }
+
   @Test func renameTrimsAndEmptyNameClearsIt() {
     #expect(pin.renamed("  Docs \n").name == "Docs")
     #expect(pin.renamed("Docs").renamed("   ").name == nil)

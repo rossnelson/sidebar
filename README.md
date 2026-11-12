@@ -203,7 +203,9 @@ window; nothing else changes.
 Right-click a tab and choose **Pin Tab**, or type `> pin` in the palette. Pinned
 tabs show above your other tabs and stay when you close their tab: click a dimmed
 pin to open it again. When a pinned tab goes to another page, a ↩ button takes it
-back to the pinned page. Drag a pin onto another pin to reorder them.
+back to the pinned page. To keep the new page instead, right-click the pin and
+choose **Set Pin to Current Page** (or type `> set pin` in the palette); the pin
+takes that page's address, title and icon. Drag a pin onto another pin to reorder them.
 
 To rename a pin, double-click it or right-click it and choose **Rename…**. Press
 Return to save or Esc to cancel. Clear the name, or choose **Use Page Title**, to

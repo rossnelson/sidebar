@@ -188,6 +188,7 @@ private struct SpaceContent: View {
               selection: selection,
               onOpen: { model.openPin(pin) },
               onReset: { model.resetPin(pin) },
+              onSetToCurrent: { model.setPinToCurrentPage(pin) },
               onClose: { model.closePinnedTab(pin) },
               onUnpin: { model.unpin(pin) },
               onMove: { model.movePin($0, to: pin.id) },
@@ -874,6 +875,8 @@ private struct PinRow: View {
   let selection: Namespace.ID
   let onOpen: () -> Void
   let onReset: () -> Void
+  /// Points the pin at the tab's current page.
+  let onSetToCurrent: () -> Void
   let onClose: () -> Void
   let onUnpin: () -> Void
   /// Another pin dropped on this one.
@@ -1018,7 +1021,11 @@ private struct PinRow: View {
     .motion(Motion.press, value: dropTargeted)
     .help(pin.url)
     .contextMenu {
-      if wandered { Button("Back to Pinned Page", action: onReset) }
+      if wandered {
+        Button("Back to Pinned Page", action: onReset)
+        Button("Set Pin to Current Page", action: onSetToCurrent)
+        Divider()
+      }
       Button("Rename…", action: onBeginRename)
       if pin.name != nil { Button("Use Page Title") { onRename("") } }
       Button("Unpin", action: onUnpin)

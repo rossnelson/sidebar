@@ -452,6 +452,17 @@ final class SidebarModel {
     savePins(next)
   }
 
+  /// Points the pin at its tab's current page, so the ↩ button goes there.
+  func setPinToCurrentPage(_ pin: Favorite) {
+    guard let id = pinnedTabIDs[pin.id], let tab = snapshot.tabs.first(where: { $0.id == id }),
+      let index = pins.firstIndex(where: { $0.id == pin.id })
+    else { return }
+    var next = pins
+    next[index] = next[index].moved(to: tab)
+    savePins(next)
+    notify("Pin set to \(next[index].title)", "pin")
+  }
+
   /// Takes the pin's tab back to the pin's own URL.
   func resetPin(_ pin: Favorite) {
     guard let id = pinnedTabIDs[pin.id] else { return }
@@ -522,6 +533,13 @@ final class SidebarModel {
 
   // MARK: - Commands
 
+  /// The pin whose tab is the active tab and is now on another page.
+  private var wanderedActivePin: Favorite? {
+    guard let activeTab else { return nil }
+    let pinned = pinnedTabIDs
+    return pins.first { pinned[$0.id] == activeTab.id && $0.url != activeTab.url }
+  }
+
   /// The palette's commands, after `>`.
   var commands: [PaletteCommand] {
     var list = [
@@ -532,6 +550,9 @@ final class SidebarModel {
       PaletteCommand(
         id: "collapse", title: isCollapsed ? "Expand Sidebar" : "Collapse Sidebar", symbol: "sidebar.left"),
     ]
+    if wanderedActivePin != nil {
+      list.insert(PaletteCommand(id: "pin-here", title: "Set Pin to Current Page", symbol: "pin.circle"), at: 2)
+    }
     for space in spaces where space.directory != spaceDirectory {
       list.append(PaletteCommand(id: "space:\(space.directory)", title: "Switch to \(space.name)", symbol: "square.stack"))
     }
@@ -546,6 +567,7 @@ final class SidebarModel {
     switch id {
     case "clear": clearInactiveTabs()
     case "pin": if let activeTab { pin(activeTab) }
+    case "pin-here": if let pin = wanderedActivePin { setPinToCurrentPage(pin) }
     case "favorite": if let activeTab { addFavorite(activeTab) }
     case "copy": copyURL()
     case "collapse": toggleCollapse()
