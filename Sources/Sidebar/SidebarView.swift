@@ -395,16 +395,21 @@ private struct FavoritesGrid: View {
           .help("Drag a tab here, or right-click a tab and choose Add to Favorites")
       }
       ForEach(Array(favorites.enumerated()), id: \.element.id) { index, favorite in
+        let tab = model.ownedTab(favorite)
         FavoriteTile(
           favorite: favorite,
+          tab: tab,
           isActive: model.isActive(favorite),
           onOpen: { model.openFavorite(favorite) },
+          onReset: { model.resetPin(favorite) },
+          onSetToCurrent: { model.setPinToCurrentPage(favorite) },
+          onClose: { model.closePinnedTab(favorite) },
           onRemove: { model.removeFavorite(favorite) },
           onDrop: { text in
             if let id = FavoriteDrag.favoriteID(text) {
               model.moveFavorite(id, to: favorite.id)
             } else if let dropped = FavoriteDrag.parse(text) {
-              model.addFavorite(dropped)
+              model.addFavorite(dropped, tabID: FavoriteDrag.tabID(text))
               if let added = model.favorites.last, added.url == dropped.url {
                 model.moveFavorite(added.id, to: favorite.id)
               }
@@ -429,7 +434,7 @@ private struct FavoritesGrid: View {
           model.moveFavorite(id, to: nil)
           handled = true
         } else if let favorite = FavoriteDrag.parse(item) {
-          model.addFavorite(favorite)
+          model.addFavorite(favorite, tabID: FavoriteDrag.tabID(item))
           handled = true
         }
       }
@@ -446,8 +451,13 @@ private struct FavoritesGrid: View {
 
 private struct FavoriteTile: View {
   let favorite: Favorite
+  /// The favorite's own open tab, if any.
+  let tab: ChromeTab?
   let isActive: Bool
   let onOpen: () -> Void
+  let onReset: () -> Void
+  let onSetToCurrent: () -> Void
+  let onClose: () -> Void
   let onRemove: () -> Void
   /// A tab or another favorite dropped on this tile. Returns `true` when used.
   let onDrop: (String) -> Bool
@@ -459,6 +469,9 @@ private struct FavoriteTile: View {
   @Environment(\.spaceAccent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  /// The tab has left the favorite's page.
+  private var wandered: Bool { tab.map { $0.url != favorite.url } ?? false }
+
   var body: some View {
     Button {
       taps += 1
@@ -466,6 +479,8 @@ private struct FavoriteTile: View {
     } label: {
       Favicon(url: favorite.url, size: 20)
         .environment(\.onLightCard, isActive)
+        // Dim while the favorite has no open tab, like a pin.
+        .opacity(tab == nil && !hovering ? 0.6 : 1)
         .keyframeAnimator(initialValue: 1.0, trigger: taps) { content, scale in
           content.scaleEffect(scale)
         } keyframes: { _ in
@@ -518,8 +533,14 @@ private struct FavoriteTile: View {
     .motion(Motion.trail, value: tilt)
     .motion(Motion.press, value: hovering)
     .motion(Motion.glide, value: isActive)
-    .help(favorite.title)
+    .help(wandered ? "\(favorite.title)\nNow on \(tab?.url ?? "")" : favorite.title)
     .contextMenu {
+      if wandered {
+        Button("Back to Favorite Page", action: onReset)
+        Button("Set Favorite to Current Page", action: onSetToCurrent)
+        Divider()
+      }
+      if tab != nil { Button("Close Tab", action: onClose) }
       Button("Remove from Favorites", role: .destructive, action: onRemove)
     }
   }

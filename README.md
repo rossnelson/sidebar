@@ -7,7 +7,7 @@ Chrome window, with:
 
 - your open tabs
 - your Chrome bookmarks (synced and local)
-- a grid of favorites for each Chrome profile ("space"); drag to add or reorder
+- a grid of favorites for each Chrome profile ("space"); each favorite keeps its own tab, like a pin
 - a space switcher: one letter icon per Chrome profile, or a two-finger swipe
 - a preview card with the full title and address when the pointer rests on a tab
 - pinned tabs for each space, which keep their own URL
@@ -180,8 +180,14 @@ Each Chrome profile has its own favorites grid, with up to 12 favorites. To add 
 favorite, drag a tab onto the grid, or use the tab's context menu. To reorder the
 favorites, drag a favorite onto another one. To reorder tabs, drag a tab onto
 another tab; the order changes in Chrome too. Open bookmark folders stay open for
-each space. Click a favorite to switch to its
-open tab, or to open it when no tab matches.
+each space.
+
+Favorites work like pinned tabs, as in Arc. Each favorite owns one tab: the tab
+that you made a favorite, the tab it opened, or a tab on exactly its URL. That tab
+does not show in the tab list. Click a favorite to switch to its tab, or to open
+it when it has none (the icon is dim). When the tab goes to another page, it stays
+the favorite's tab; right-click the favorite and choose **Back to Favorite Page** or
+**Set Favorite to Current Page**. Clear and auto-archive never close a favorite's tab.
 
 Sidebar saves favorites in
 `~/Library/Application Support/Sidebar/favorites-<profile folder>.json`.

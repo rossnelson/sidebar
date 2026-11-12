@@ -113,7 +113,7 @@ final class SidebarModel {
     do {
       let next = try chrome.frontWindowTabs()
       noteClosedTabs(next)
-      pinTabIDs = PinMatching.match(pins: pins, tabs: next.tabs, remembered: pinTabIDs)
+      pinTabIDs = PinMatching.match(pins: tabOwners, tabs: next.tabs, remembered: pinTabIDs)
       noteActivity(next)
       if next != snapshot { snapshot = next }
       if problem == .automationDenied { problem = nil }
@@ -242,7 +242,15 @@ final class SidebarModel {
   }
 
   func addFavorite(_ tab: ChromeTab) {
-    addFavorite(Favorite(url: tab.url, title: tab.title.isEmpty ? tab.url : tab.title))
+    let favorite = Favorite(url: tab.url, title: tab.title.isEmpty ? tab.url : tab.title)
+    pinTabIDs[favorite.id] = tab.id
+    addFavorite(favorite)
+  }
+
+  /// Adds a favorite. With `tabID`, that open tab becomes the favorite's tab.
+  func addFavorite(_ favorite: Favorite, tabID: Int?) {
+    if let tabID { pinTabIDs[favorite.id] = tabID }
+    addFavorite(favorite)
   }
 
   func addFavorite(_ favorite: Favorite) {
@@ -250,6 +258,7 @@ final class SidebarModel {
   }
 
   func removeFavorite(_ favorite: Favorite) {
+    pinTabIDs[favorite.id] = nil
     saveFavorites(favorites.filter { $0.id != favorite.id })
   }
 
@@ -396,12 +405,21 @@ final class SidebarModel {
 
   // MARK: - Pins
 
-  /// Each pin's open tab ID, from the last tab refresh.
+  /// Favorites and pins: each one owns at most one tab, as in Arc.
+  private var tabOwners: [Favorite] { favorites + pins }
+
+  /// The open tab ID of each favorite and pin, from the last tab refresh.
   var pinnedTabIDs: [UUID: Int] {
-    PinMatching.match(pins: pins, tabs: snapshot.tabs, remembered: pinTabIDs)
+    PinMatching.match(pins: tabOwners, tabs: snapshot.tabs, remembered: pinTabIDs)
   }
 
-  /// The tabs that are not pinned, for the tab list.
+  /// The favorite's or pin's open tab.
+  func ownedTab(_ owner: Favorite) -> ChromeTab? {
+    guard let id = pinnedTabIDs[owner.id] else { return nil }
+    return snapshot.tabs.first { $0.id == id }
+  }
+
+  /// The tabs that no favorite or pin owns, for the tab list.
   var unpinnedTabs: [ChromeTab] {
     let pinned = Set(pinnedTabIDs.values)
     return snapshot.tabs.filter { !pinned.contains($0.id) }
@@ -452,15 +470,20 @@ final class SidebarModel {
     savePins(next)
   }
 
-  /// Points the pin at its tab's current page, so the ↩ button goes there.
+  /// Points the pin or favorite at its tab's current page, so ↩ goes there.
   func setPinToCurrentPage(_ pin: Favorite) {
-    guard let id = pinnedTabIDs[pin.id], let tab = snapshot.tabs.first(where: { $0.id == id }),
-      let index = pins.firstIndex(where: { $0.id == pin.id })
-    else { return }
-    var next = pins
-    next[index] = next[index].moved(to: tab)
-    savePins(next)
-    notify("Pin set to \(next[index].title)", "pin")
+    guard let tab = ownedTab(pin) else { return }
+    if let index = pins.firstIndex(where: { $0.id == pin.id }) {
+      var next = pins
+      next[index] = next[index].moved(to: tab)
+      savePins(next)
+      notify("Pin set to \(next[index].title)", "pin")
+    } else if let index = favorites.firstIndex(where: { $0.id == pin.id }) {
+      var next = favorites
+      next[index] = next[index].moved(to: tab)
+      saveFavorites(next)
+      notify("Favorite set to \(next[index].title)", "star")
+    }
   }
 
   /// Takes the pin's tab back to the pin's own URL.
@@ -490,7 +513,7 @@ final class SidebarModel {
 
   /// Tabs that Clear and auto-archive keep open.
   private var keptTabIDs: Set<Int> {
-    Set(pinnedTabIDs.values).union(favorites.compactMap { $0.matchingTab(in: snapshot.tabs)?.id })
+    Set(pinnedTabIDs.values)
   }
 
   private func noteActivity(_ next: TabSnapshot) {
@@ -537,7 +560,7 @@ final class SidebarModel {
   private var wanderedActivePin: Favorite? {
     guard let activeTab else { return nil }
     let pinned = pinnedTabIDs
-    return pins.first { pinned[$0.id] == activeTab.id && $0.url != activeTab.url }
+    return tabOwners.first { pinned[$0.id] == activeTab.id && $0.url != activeTab.url }
   }
 
   /// The palette's commands, after `>`.
@@ -550,8 +573,9 @@ final class SidebarModel {
       PaletteCommand(
         id: "collapse", title: isCollapsed ? "Expand Sidebar" : "Collapse Sidebar", symbol: "sidebar.left"),
     ]
-    if wanderedActivePin != nil {
-      list.insert(PaletteCommand(id: "pin-here", title: "Set Pin to Current Page", symbol: "pin.circle"), at: 2)
+    if let owner = wanderedActivePin {
+      let kind = pins.contains { $0.id == owner.id } ? "Pin" : "Favorite"
+      list.insert(PaletteCommand(id: "pin-here", title: "Set \(kind) to Current Page", symbol: "pin.circle"), at: 2)
     }
     for space in spaces where space.directory != spaceDirectory {
       list.append(PaletteCommand(id: "space:\(space.directory)", title: "Switch to \(space.name)", symbol: "square.stack"))
@@ -588,15 +612,13 @@ final class SidebarModel {
     saveFavorites(FavoritesStore.moving(id, to: target, in: favorites))
   }
 
-  /// Switches to the favorite's tab when one is open, else opens it.
-  func openFavorite(_ favorite: Favorite) {
-    if let tab = favorite.matchingTab(in: snapshot.tabs) { return activate(tab) }
-    open(favorite.url)
-  }
+  /// Switches to the favorite's own tab, or opens the favorite in a new tab
+  /// that it then owns.
+  func openFavorite(_ favorite: Favorite) { openPin(favorite) }
 
   func isActive(_ favorite: Favorite) -> Bool {
-    guard let activeTab else { return false }
-    return favorite.matchingTab(in: snapshot.tabs)?.id == activeTab.id
+    guard let active = snapshot.activeTabID else { return false }
+    return pinnedTabIDs[favorite.id] == active
   }
 
   // MARK: - Actions
@@ -618,7 +640,7 @@ final class SidebarModel {
   /// The tabs that Clear would close.
   var clearableTabIDs: [Int] {
     TabCleanup.idsToClose(
-      in: snapshot.tabs, activeID: snapshot.activeTabID, favorites: favorites, keeping: Set(pinnedTabIDs.values))
+      in: snapshot.tabs, activeID: snapshot.activeTabID, favorites: [], keeping: Set(pinnedTabIDs.values))
   }
 
   /// Arc's "Clear": closes every tab except the active one and the tabs of favorites.
