@@ -72,15 +72,29 @@ final class PaletteController: NSObject, NSWindowDelegate {
 
   func close() {
     stopKeyMonitor()
-    panel?.orderOut(nil)
+    fadeOut()
     model.chrome.focus()
   }
 
   private func open(_ result: PaletteResult) {
     stopKeyMonitor()
-    panel?.orderOut(nil)
+    fadeOut()
     model.open(result)
     model.chrome.focus()
+  }
+
+  /// A quick fade instead of vanishing.
+  private func fadeOut() {
+    guard let panel, panel.isVisible else { return }
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0.12
+      panel.animator().alphaValue = 0
+    } completionHandler: {
+      MainActor.assumeIsolated {
+        panel.orderOut(nil)
+        panel.alphaValue = 1
+      }
+    }
   }
 
   /// Closes the palette and replays a Chrome shortcut (⌘W, ⌘⇧T, ⌘1 …) in Chrome.
@@ -201,7 +215,8 @@ final class PalettePanel: NSPanel {
     hasShadow = true
     hidesOnDeactivate = false
     isMovable = false
-    animationBehavior = .utilityWindow
+    // The view animates its own entrance.
+    animationBehavior = .none
   }
 
   override var canBecomeKey: Bool { true }
@@ -214,82 +229,139 @@ struct PaletteView: View {
   @Bindable var state: PaletteState
   let onOpen: (PaletteResult) -> Void
   @FocusState private var focused: Bool
+  @State private var appeared = false
+  @Namespace private var highlight
+  @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  static let cornerRadius: CGFloat = 22
 
   var body: some View {
     let results = state.results
+    let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+    let accent = Color(SpaceColors.palette(for: state.theme, dark: colorScheme == .dark).accent)
     VStack(spacing: 0) {
-      HStack(spacing: 10) {
+      HStack(spacing: 12) {
         Image(systemName: "magnifyingglass")
-          .font(.system(size: 18))
+          .font(.system(size: 17, weight: .medium))
           .foregroundStyle(.secondary)
+          .symbolEffect(.bounce, value: state.query.isEmpty)
         TextField("Search tabs, bookmarks, history, or the web", text: $state.query)
           .textFieldStyle(.plain)
-          .font(.system(size: 20))
+          .font(.system(size: 19))
+          .kerning(-0.2)
           .focused($focused)
       }
-      .padding(.horizontal, 18)
-      .padding(.vertical, 16)
+      .padding(.horizontal, 20)
+      .padding(.vertical, 17)
 
-      Divider()
+      LinearGradient(colors: [.clear, .primary.opacity(0.12), .clear], startPoint: .leading, endPoint: .trailing)
+        .frame(height: 0.5)
 
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(spacing: 2) {
             ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
-              PaletteRow(result: result, selected: index == state.selection)
+              PaletteRow(result: result, selected: index == state.selection, highlight: highlight)
                 .id(result.id)
                 .onTapGesture { onOpen(result) }
-                .onHover { if $0 { state.selection = index } }
+                // Only a moving pointer selects; rows scrolling under a still one do not.
+                .onContinuousHover { phase in
+                  if case .active = phase, state.selection != index { state.selection = index }
+                }
+                .cascadeIn(delay: Motion.stagger(index, step: 0.018, cap: 10), distance: 5)
             }
           }
           .padding(8)
+          .motion(.snappy(duration: 0.16), value: state.selection)
         }
+        .scrollIndicators(.never)
         .onChange(of: state.selection) { _, selection in
           if results.indices.contains(selection) { proxy.scrollTo(results[selection].id) }
         }
       }
 
-      Divider()
+      LinearGradient(colors: [.clear, .primary.opacity(0.1), .clear], startPoint: .leading, endPoint: .trailing)
+        .frame(height: 0.5)
 
-      HStack(spacing: 14) {
-        Hint(keys: "↵", label: "Open")
-        Hint(keys: "↑↓", label: "Move")
-        Hint(keys: "⌘T", label: "Blank tab")
-        Hint(keys: "esc", label: "Close")
+      HStack(spacing: 16) {
+        Hint(symbols: ["return"], label: "Open")
+        Hint(symbols: ["arrow.up", "arrow.down"], label: "Move")
+        Hint(symbols: ["command"], text: "T", label: "Blank tab")
+        Hint(symbols: ["escape"], label: "Close")
         Spacer()
       }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 8)
+      .padding(.horizontal, 18)
+      .padding(.vertical, 10)
     }
     .frame(width: PaletteController.size.width, height: PaletteController.size.height)
-    .modifier(Themed(theme: state.theme, cornerRadius: 14))
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.08)))
-    .onAppear { focused = true }
+    .modifier(Themed(theme: state.theme, cornerRadius: Self.cornerRadius, fillsBackground: false))
+    .glassEffect(.regular.tint(accent.opacity(0.18)), in: shape)
+    .overlay(shape.strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
+    .scaleEffect(appeared || reduceMotion ? 1 : 0.94)
+    .opacity(appeared ? 1 : 0)
+    .blur(radius: appeared || reduceMotion ? 0 : 6)
+    .onAppear {
+      focused = true
+      withAnimation(Motion.animation(.spring(response: 0.3, dampingFraction: 0.8), reduceMotion: reduceMotion)) {
+        appeared = true
+      }
+    }
   }
 }
 
 private struct PaletteRow: View {
   let result: PaletteResult
   let selected: Bool
+  let highlight: Namespace.ID
+  @Environment(\.sidebarColors) private var colors
 
   var body: some View {
     HStack(spacing: 12) {
-      icon.frame(width: 20, height: 20)
-      VStack(alignment: .leading, spacing: 1) {
-        Text(result.title).lineLimit(1).truncationMode(.tail)
+      icon
+        .frame(width: 22, height: 22)
+        .scaleEffect(selected ? 1.08 : 1)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(result.title)
+          .font(.system(size: 13.5, weight: selected ? .semibold : .medium))
+          .kerning(-0.1)
+          .lineLimit(1)
+          .truncationMode(.tail)
         if showsURL {
-          Text(result.url).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+          Text(result.url)
+            .font(.system(size: 11))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
         }
       }
       Spacer(minLength: 8)
-      Text(badge)
-        .font(.caption)
-        .foregroundStyle(.secondary)
+      HStack(spacing: 6) {
+        Text(badge.uppercased())
+          .font(.system(size: 10, weight: .semibold))
+          .kerning(0.6)
+          .foregroundStyle(.secondary)
+        if selected {
+          Image(systemName: "return")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.secondary)
+            .transition(.scale(scale: 0.4).combined(with: .opacity))
+        }
+      }
+      .opacity(selected || result.kind == .search ? 1 : 0.55)
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 7)
-    .modifier(RowStyle(highlighted: selected, hovering: false, cornerRadius: 8))
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
+    .background {
+      if selected {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+          .fill(colors.selected)
+          .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+          .matchedGeometryEffect(id: "palette-highlight", in: highlight)
+      }
+    }
   }
 
   private var showsURL: Bool {
@@ -301,9 +373,9 @@ private struct PaletteRow: View {
 
   @ViewBuilder private var icon: some View {
     switch result.kind {
-    case .search: Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-    case .url: Image(systemName: "arrow.up.right.square").foregroundStyle(.secondary)
-    default: Favicon(url: result.url)
+    case .search: Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+    case .url: Image(systemName: "arrow.up.right").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+    default: Favicon(url: result.url, size: 18)
     }
   }
 
@@ -318,18 +390,26 @@ private struct PaletteRow: View {
   }
 }
 
+/// A key hint: SF Symbol keycaps and a label.
 private struct Hint: View {
-  let keys: String
+  let symbols: [String]
+  var text: String?
   let label: String
 
   var body: some View {
-    HStack(spacing: 4) {
-      Text(keys)
-        .font(.caption.monospaced())
-        .padding(.horizontal, 5)
-        .padding(.vertical, 1)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
-      Text(label).font(.caption).foregroundStyle(.secondary)
+    HStack(spacing: 5) {
+      HStack(spacing: 2) {
+        ForEach(symbols, id: \.self) { symbol in
+          Image(systemName: symbol)
+        }
+        if let text { Text(text) }
+      }
+      .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+      .padding(.horizontal, 5)
+      .frame(minWidth: 18, minHeight: 17)
+      .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+      .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(.primary.opacity(0.12), lineWidth: 0.5))
+      Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
     }
   }
 }

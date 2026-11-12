@@ -123,6 +123,15 @@ import Testing
   }
 }
 
+@Suite struct TabLoading {
+  @Test func `reads the loading flag and keeps old records working`() {
+    let rs = TabSnapshot.recordSeparator, us = TabSnapshot.unitSeparator
+    let snapshot = TabSnapshot.parse("1\(rs)5\(us)1\(us)Title\(us)https://a.com\(rs)6\(us)Old\(us)https://b.com")
+    #expect(snapshot.tabs.map(\.isLoading) == [true, false])
+    #expect(snapshot.tabs.map(\.title) == ["Title", "Old"])
+  }
+}
+
 @Suite struct TabStripRule {
   @Test func `a window without a tab strip gets no sidebar`() {
     let popup = WindowAttributes(
@@ -292,6 +301,12 @@ import Testing
     #expect(layout.windowFrame == nil)
     #expect(layout.frame == CGRect(x: 140, y: 92, width: 1268, height: 816))
     #expect(layout.holeInFrame == CGRect(x: 260, y: 8, width: 1000, height: 800))
+  }
+
+  @Test func `light space colors keep white text readable`() {
+    let palette = SpacePalette.make(seed: 0x26A69A, dark: false)
+    #expect(LCh(rgb: palette.gradientStart).l <= 52)
+    #expect(LCh(rgb: palette.ink).l < 30)
   }
 
   @Test func `the sidebar sits left of Chrome with gaps`() {

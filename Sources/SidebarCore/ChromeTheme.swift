@@ -195,6 +195,10 @@ public struct LCh: Sendable, Equatable {
 public struct SpacePalette: Sendable, Equatable {
   public var gradientStart: RGB
   public var gradientEnd: RGB
+  /// A third tone, a little off the seed's hue, that gives the mesh gradient depth.
+  public var accent: RGB = RGB(r: 0, g: 0, b: 0)
+  /// A dark tone of the hue for text on the white active-tab card.
+  public var ink: RGB = RGB(r: 0, g: 0, b: 0)
 
   public static func make(seed: UInt32, dark: Bool, grayscale: Bool = false) -> SpacePalette {
     let hue = LCh(rgb: RGB(hex: seed)).h
@@ -202,8 +206,13 @@ public struct SpacePalette: Sendable, Equatable {
     func tone(_ l: Double, _ c: Double, _ shift: Double) -> RGB {
       LCh(l: l, c: c * scale, h: (hue + shift + 360).truncatingRemainder(dividingBy: 360)).rgb
     }
+    // Light tones stay dark enough for white text (about 4.5:1 at the start).
     return dark
-      ? SpacePalette(gradientStart: tone(34, 32, -12), gradientEnd: tone(24, 36, 12))
-      : SpacePalette(gradientStart: tone(64, 50, -12), gradientEnd: tone(52, 60, 12))
+      ? SpacePalette(
+        gradientStart: tone(34, 32, -12), gradientEnd: tone(24, 36, 12),
+        accent: tone(30, 44, 34), ink: tone(22, 30, 0))
+      : SpacePalette(
+        gradientStart: tone(50, 54, -12), gradientEnd: tone(40, 62, 12),
+        accent: tone(46, 64, 34), ink: tone(26, 34, 0))
   }
 }

@@ -191,14 +191,28 @@ final class ToastController {
 private struct ToastView: View {
   let message: String
   let systemImage: String
+  @State private var appeared = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    Label(message, systemImage: systemImage)
-      .font(.system(size: 13, weight: .semibold))
-      .padding(.horizontal, 14)
-      .padding(.vertical, 9)
-      .background(.regularMaterial, in: Capsule())
-      .overlay(Capsule().strokeBorder(.white.opacity(0.12)))
-      .padding(6)
+    Label {
+      Text(message)
+    } icon: {
+      Image(systemName: systemImage)
+        .symbolEffect(.bounce, options: .nonRepeating, value: appeared)
+    }
+    .font(.system(size: 13, weight: .semibold))
+    .padding(.horizontal, 16)
+    .padding(.vertical, 10)
+    .glassEffect(.regular, in: Capsule())
+    .scaleEffect(appeared || reduceMotion ? 1 : 0.85)
+    .offset(y: appeared || reduceMotion ? 0 : -10)
+    .opacity(appeared ? 1 : 0)
+    .padding(10)
+    .onAppear {
+      withAnimation(Motion.animation(.spring(response: 0.35, dampingFraction: 0.7), reduceMotion: reduceMotion)) {
+        appeared = true
+      }
+    }
   }
 }

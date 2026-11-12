@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "Sidebar",
-  platforms: [.macOS(.v14)],
+  platforms: [.macOS(.v26)],
   targets: [
     // Pure logic: parsing Chrome's files and AppleScript output, window rules, layout.
     .target(name: "SidebarCore"),

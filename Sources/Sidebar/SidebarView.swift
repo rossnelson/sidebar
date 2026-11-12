@@ -2,7 +2,7 @@ import AppKit
 import SidebarCore
 import SwiftUI
 
-/// The sidebar panel: the space's gradient and the sidebar. `frameHole.minX`
+/// The sidebar panel: the living surface and the sidebar. `frameHole.minX`
 /// is the content's width.
 struct FrameView: View {
   let model: SidebarModel
@@ -12,14 +12,14 @@ struct FrameView: View {
   nonisolated static let outerCornerRadius: CGFloat = 16
 
   var body: some View {
+    let palette = SpaceColors.palette(for: model.theme, dark: colorScheme == .dark)
     ZStack(alignment: .topLeading) {
-      RoundedRectangle(cornerRadius: FrameView.outerCornerRadius, style: .continuous)
-        .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark))
+      LivingSurface(palette: palette, phase: model.snapshot.activeTabID ?? 0)
 
       // The panel's width, not `isCollapsed`: while it slides, the panel keeps
       // its content.
       if model.frameHole.minX < 40 {
-        // The left border: hovering it slides the sidebar out over Chrome.
+        // The left strip: hovering it slides the sidebar out over Chrome.
         Color.clear
           .frame(width: max(model.frameHole.minX, 0))
           .frame(maxHeight: .infinity)
@@ -33,6 +33,8 @@ struct FrameView: View {
     }
     .foregroundStyle(.white)
     .environment(\.sidebarColors, SpaceColors.rows)
+    .environment(\.spaceInk, Color(palette.ink))
+    .environment(\.spaceAccent, Color(palette.accent))
   }
 }
 
@@ -42,14 +44,15 @@ struct PeekView: View {
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
+    let palette = SpaceColors.palette(for: model.theme, dark: colorScheme == .dark)
     SidebarView(model: model)
       .padding(.vertical, 4)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .background(
-        RoundedRectangle(cornerRadius: FrameView.outerCornerRadius, style: .continuous)
-          .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark)))
+      .background(LivingSurface(palette: palette, phase: model.snapshot.activeTabID ?? 0))
       .foregroundStyle(.white)
       .environment(\.sidebarColors, SpaceColors.rows)
+      .environment(\.spaceInk, Color(palette.ink))
+      .environment(\.spaceAccent, Color(palette.accent))
       .onHover { model.setPeeking($0) }
   }
 }
@@ -59,14 +62,7 @@ enum SpaceColors {
   static let rows = SidebarColors(
     background: nil, hover: .white.opacity(0.14), selected: .white.opacity(0.3), text: .white)
 
-  static func gradient(for theme: ProfileTheme, dark: Bool) -> LinearGradient {
-    let palette = palette(for: theme, dark: dark)
-    return LinearGradient(
-      colors: [Color(palette.gradientStart), Color(palette.gradientEnd)],
-      startPoint: .topLeading, endPoint: .bottomTrailing)
-  }
-
-  /// The space's gradient. Chrome's default theme uses the system accent color.
+  /// The space's colors. Chrome's default theme uses the system accent color.
   static func palette(for theme: ProfileTheme, dark: Bool) -> SpacePalette {
     let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
     let fallback = RGB(r: accent.redComponent, g: accent.greenComponent, b: accent.blueComponent).hex
@@ -74,78 +70,136 @@ enum SpaceColors {
   }
 }
 
+private struct SpaceInkKey: EnvironmentKey {
+  static let defaultValue = Color.black
+}
+
+private struct SpaceAccentKey: EnvironmentKey {
+  static let defaultValue = Color.white
+}
+
+extension EnvironmentValues {
+  /// Dark text in the space's hue, for the white active-tab card.
+  var spaceInk: Color {
+    get { self[SpaceInkKey.self] }
+    set { self[SpaceInkKey.self] = newValue }
+  }
+
+  /// The space's third tone, for small glows.
+  var spaceAccent: Color {
+    get { self[SpaceAccentKey.self] }
+    set { self[SpaceAccentKey.self] = newValue }
+  }
+}
+
 // MARK: - Sidebar
 
 struct SidebarView: View {
   @Bindable var model: SidebarModel
+  @Namespace private var selection
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 0) {
       TopBar(model: model)
+        .cascadeIn(delay: 0)
       AddressPill(tab: model.activeTab, onOpen: model.openPalette)
+        .padding(.top, 8)
+        .cascadeIn(delay: 0.03)
       FavoritesGrid(model: model)
+        .padding(.top, 12)
+        .cascadeIn(delay: 0.06)
 
       if let problem = model.problem {
         ProblemBanner(problem: problem)
+          .padding(.top, 10)
+          .transition(.opacity.combined(with: .move(edge: .top)))
       }
 
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 2) {
           if !model.spaceName.isEmpty {
-            Text(model.spaceName)
-              .font(.system(size: 12, weight: .semibold))
-              .opacity(0.7)
-              .padding(.horizontal, 10)
-              .padding(.bottom, 4)
+            SpaceLabel(name: model.spaceName)
+              .cascadeIn(delay: 0.09)
           }
 
-          ForEach(model.bookmarks) { node in
+          ForEach(Array(model.bookmarks.enumerated()), id: \.element.id) { index, node in
             BookmarkTree(node: node, depth: 0, open: model.open)
+              .cascadeIn(delay: 0.1 + Motion.stagger(index))
           }
 
           if !model.bookmarks.isEmpty {
-            Rectangle()
-              .fill(.white.opacity(0.25))
-              .frame(height: 1)
-              .padding(.horizontal, 10)
+            FadingDivider()
               .padding(.vertical, 8)
+              .cascadeIn(delay: 0.14)
           }
 
-          ForEach(model.snapshot.tabs) { tab in
+          ForEach(Array(model.snapshot.tabs.enumerated()), id: \.element.id) { index, tab in
             TabRow(
               tab: tab,
               isActive: tab.id == model.snapshot.activeTabID,
+              selection: selection,
               onSelect: { model.activate(tab) },
               onClose: { model.close(tab) },
               onFavorite: { model.addFavorite(tab) })
+            .cascadeIn(delay: 0.16 + Motion.stagger(index))
+            .transition(rowTransition)
           }
 
           NewTabRow(onTap: model.newTab)
+            .cascadeIn(delay: 0.2)
         }
+        .motion(Motion.glide, value: model.snapshot.activeTabID)
+        .motion(Motion.list, value: model.snapshot.tabs.map(\.id))
+        .padding(.top, 6)
         .padding(.bottom, 12)
       }
       .scrollIndicators(.never)
+      .scrollClipDisabled(false)
     }
     .padding(.horizontal, 10)
     .padding(.top, 10)
+    .motion(Motion.list, value: model.problem)
+  }
+
+  private var rowTransition: AnyTransition {
+    reduceMotion
+      ? .opacity
+      : .asymmetric(
+        insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)),
+        removal: .opacity.combined(with: .scale(scale: 0.88, anchor: .leading)))
   }
 }
 
 private struct TopBar: View {
   let model: SidebarModel
+  @State private var backTick = 0
+  @State private var forwardTick = 0
+  @State private var reloadTick = 0
 
   var body: some View {
-    HStack(spacing: 14) {
+    HStack(spacing: 6) {
       IconButton(
-        symbol: "sidebar.left", help: model.isCollapsed ? "Keep Sidebar Open (⌃⌘S)" : "Collapse Sidebar (⌃⌘S)",
-        action: model.toggleCollapse)
+        symbol: "sidebar.left", help: model.isCollapsed ? "Keep Sidebar Open (⌃⌘S)" : "Collapse Sidebar (⌃⌘S)"
+      ) { model.toggleCollapse() }
       Spacer()
-      IconButton(symbol: "arrow.left", help: "Back") { model.navigate(.back) }
-      IconButton(symbol: "arrow.right", help: "Forward") { model.navigate(.forward) }
-      IconButton(symbol: "arrow.clockwise", help: "Reload") { model.navigate(.reload) }
+      IconButton(symbol: "arrow.left", help: "Back") {
+        backTick += 1
+        model.navigate(.back)
+      }
+      .symbolEffect(.wiggle.left, options: .nonRepeating, value: backTick)
+      IconButton(symbol: "arrow.right", help: "Forward") {
+        forwardTick += 1
+        model.navigate(.forward)
+      }
+      .symbolEffect(.wiggle.right, options: .nonRepeating, value: forwardTick)
+      IconButton(symbol: "arrow.clockwise", help: "Reload") {
+        reloadTick += 1
+        model.navigate(.reload)
+      }
+      .symbolEffect(.rotate.clockwise, options: .nonRepeating, value: reloadTick)
     }
-    .padding(.horizontal, 6)
-    .frame(height: 24)
+    .frame(height: 26)
   }
 }
 
@@ -153,13 +207,20 @@ private struct IconButton: View {
   let symbol: String
   let help: String
   let action: () -> Void
+  @State private var hovering = false
 
   var body: some View {
     Button(action: action) {
-      Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
+      Image(systemName: symbol)
+        .font(.system(size: 13, weight: .semibold))
+        .frame(width: 26, height: 26)
+        .background(Circle().fill(.white.opacity(hovering ? 0.16 : 0)))
+        .contentShape(Circle())
     }
-    .buttonStyle(.plain)
-    .opacity(0.85)
+    .buttonStyle(PressStyle(scale: 0.86))
+    .opacity(hovering ? 1 : 0.82)
+    .onHover { hovering = $0 }
+    .motion(.easeOut(duration: 0.14), value: hovering)
     .help(help)
   }
 }
@@ -171,28 +232,69 @@ private struct AddressPill: View {
   @State private var hovering = false
 
   var body: some View {
-    HStack(spacing: 8) {
-      Image(systemName: "link").font(.system(size: 11, weight: .semibold)).opacity(0.7)
-      Text(host).font(.system(size: 13, weight: .medium)).lineLimit(1)
-      Spacer(minLength: 0)
+    Button(action: onOpen) {
+      HStack(spacing: 8) {
+        Group {
+          if let tab, !tab.url.hasPrefix("chrome://") {
+            Favicon(url: tab.url, size: 14)
+          } else {
+            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .semibold))
+          }
+        }
+        .frame(width: 16)
+        .id(tab?.url.hostKey)
+        .transition(.scale(scale: 0.5).combined(with: .opacity))
+
+        Text(host)
+          .font(.system(size: 13, weight: .medium))
+          .kerning(-0.1)
+          .lineLimit(1)
+          .id(host)
+          .transition(.push(from: .bottom))
+        Spacer(minLength: 0)
+        Text("⌘T")
+          .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+          .padding(.horizontal, 6)
+          .padding(.vertical, 2)
+          .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+          .opacity(hovering ? 0.9 : 0)
+          .offset(x: hovering ? 0 : 6)
+      }
+      .padding(.horizontal, 12)
+      .frame(height: 36)
+      .background(
+        RoundedRectangle(cornerRadius: 11, style: .continuous)
+          .fill(.white.opacity(hovering ? 0.22 : 0.14))
+          .shadow(color: .black.opacity(hovering ? 0.12 : 0.05), radius: hovering ? 6 : 2, y: 1))
+      .overlay(
+        RoundedRectangle(cornerRadius: 11, style: .continuous)
+          .strokeBorder(.white.opacity(hovering ? 0.22 : 0.12), lineWidth: 0.5))
+      .contentShape(Rectangle())
     }
-    .padding(.horizontal, 12)
-    .frame(height: 34)
-    .background(.white.opacity(hovering ? 0.24 : 0.16), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    .contentShape(Rectangle())
+    .buttonStyle(PressStyle(scale: 0.98))
     .onHover { hovering = $0 }
-    .onTapGesture(perform: onOpen)
+    .motion(.snappy(duration: 0.22), value: host)
+    .motion(.easeOut(duration: 0.16), value: hovering)
     .help("Search tabs, bookmarks and history (⌘T)")
   }
 
   private var host: String {
-    guard let tab else { return "Search or enter URL" }
-    guard let host = URL(string: tab.url)?.host() else { return tab.title }
+    // Chrome's own pages (the new-tab page, settings) have no site to show.
+    guard let tab, !tab.url.hasPrefix("chrome://") else { return "Search or enter URL" }
+    return tab.url.hostKey ?? tab.title
+  }
+}
+
+private extension String {
+  /// The URL's host without `www.`.
+  var hostKey: String? {
+    guard let host = URL(string: self)?.host(), !host.isEmpty else { return nil }
     return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
   }
 }
 
-/// The space's favorites as icon tiles, four to a row, with dim empty slots.
+/// The space's favorites as icon tiles, four to a row. Only real favorites
+/// show; an empty space shows one dashed tile that explains how to add one.
 private struct FavoritesGrid: View {
   let model: SidebarModel
   private let columns = Array(
@@ -201,21 +303,23 @@ private struct FavoritesGrid: View {
   var body: some View {
     let favorites = model.favorites
     LazyVGrid(columns: columns, spacing: 8) {
-      ForEach(0..<FavoritesStore.slotCount(for: favorites.count), id: \.self) { index in
-        if favorites.indices.contains(index) {
-          FavoriteTile(
-            favorite: favorites[index],
-            isActive: model.isActive(favorites[index]),
-            onOpen: { model.openFavorite(favorites[index]) },
-            onRemove: { model.removeFavorite(favorites[index]) })
-        } else {
-          RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(.white.opacity(0.1))
-            .frame(height: 46)
-            .help("Right-click a tab and choose Add to Favorites")
-        }
+      if favorites.isEmpty {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+          .strokeBorder(.white.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+          .frame(height: 44)
+          .overlay(Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).opacity(0.6))
+          .help("Right-click a tab and choose Add to Favorites")
+      }
+      ForEach(Array(favorites.enumerated()), id: \.element.id) { index, favorite in
+        FavoriteTile(
+          favorite: favorite,
+          isActive: model.isActive(favorite),
+          onOpen: { model.openFavorite(favorite) },
+          onRemove: { model.removeFavorite(favorite) })
+        .transition(.scale(scale: 0.4).combined(with: .opacity))
       }
     }
+    .motion(Motion.press, value: favorites.map(\.id))
   }
 }
 
@@ -225,22 +329,75 @@ private struct FavoriteTile: View {
   let onOpen: () -> Void
   let onRemove: () -> Void
   @State private var hovering = false
+  @State private var taps = 0
+  @Environment(\.spaceAccent) private var accent
 
   var body: some View {
-    Favicon(url: favorite.url, size: 20)
-      .frame(maxWidth: .infinity)
-      .frame(height: 46)
-      .background(
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-          .fill(.white.opacity(isActive ? 0.5 : hovering ? 0.28 : 0.18)))
-      .shadow(color: .black.opacity(isActive ? 0.15 : 0), radius: 3, y: 1)
-      .contentShape(Rectangle())
-      .onHover { hovering = $0 }
-      .onTapGesture(perform: onOpen)
-      .help(favorite.title)
-      .contextMenu {
-        Button("Remove from Favorites", role: .destructive, action: onRemove)
-      }
+    Button {
+      taps += 1
+      onOpen()
+    } label: {
+      Favicon(url: favorite.url, size: 20)
+        .keyframeAnimator(initialValue: 1.0, trigger: taps) { content, scale in
+          content.scaleEffect(scale)
+        } keyframes: { _ in
+          SpringKeyframe(1.3, duration: 0.14, spring: .snappy)
+          SpringKeyframe(1.0, duration: 0.4, spring: .bouncy)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 44)
+        .background(
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(.white.opacity(isActive ? 0.94 : hovering ? 0.26 : 0.16))
+            .shadow(color: isActive ? accent.opacity(0.9) : .clear, radius: 10)
+            .shadow(color: .black.opacity(isActive ? 0.16 : hovering ? 0.14 : 0), radius: hovering ? 6 : 2, y: hovering ? 3 : 1))
+        .overlay(
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(.white.opacity(hovering && !isActive ? 0.25 : 0), lineWidth: 0.5))
+        .scaleEffect(hovering ? 1.05 : 1)
+        .offset(y: hovering ? -1.5 : 0)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(PressStyle(scale: 0.9))
+    .onHover { hovering = $0 }
+    .motion(Motion.press, value: hovering)
+    .motion(Motion.glide, value: isActive)
+    .help(favorite.title)
+    .contextMenu {
+      Button("Remove from Favorites", role: .destructive, action: onRemove)
+    }
+  }
+}
+
+private struct SpaceLabel: View {
+  let name: String
+  @Environment(\.spaceAccent) private var accent
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Circle()
+        .fill(.white)
+        .frame(width: 5, height: 5)
+        .shadow(color: .white.opacity(0.8), radius: 3)
+      Text(name.uppercased())
+        .font(.system(size: 10.5, weight: .semibold))
+        .kerning(0.9)
+    }
+    .opacity(0.62)
+    .padding(.horizontal, 10)
+    .padding(.top, 6)
+    .padding(.bottom, 4)
+  }
+}
+
+/// A hairline that fades out at both ends.
+private struct FadingDivider: View {
+  var body: some View {
+    LinearGradient(
+      colors: [.clear, .white.opacity(0.28), .white.opacity(0.28), .clear],
+      startPoint: .leading, endPoint: .trailing)
+    .frame(height: 0.5)
+    .padding(.horizontal, 6)
   }
 }
 
@@ -249,32 +406,73 @@ private struct FavoriteTile: View {
 private struct TabRow: View {
   let tab: ChromeTab
   let isActive: Bool
+  let selection: Namespace.ID
   let onSelect: () -> Void
   let onClose: () -> Void
   let onFavorite: () -> Void
   @State private var hovering = false
+  @Environment(\.spaceInk) private var ink
 
   var body: some View {
-    HStack(spacing: 10) {
-      Favicon(url: tab.url)
-      Text(tab.title.isEmpty ? tab.url : tab.title)
-        .font(.system(size: 13, weight: .medium))
-        .lineLimit(1)
-        .truncationMode(.tail)
-      Spacer(minLength: 0)
-      if hovering {
-        Button(action: onClose) {
-          Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+    Button(action: onSelect) {
+      HStack(spacing: 10) {
+        ZStack {
+          Favicon(url: tab.url)
+            .keyframeAnimator(initialValue: 1.0, trigger: isActive) { content, scale in
+              content.scaleEffect(scale)
+            } keyframes: { _ in
+              SpringKeyframe(isActive ? 1.28 : 1.0, duration: 0.12, spring: .snappy)
+              SpringKeyframe(1.0, duration: 0.36, spring: .bouncy)
+            }
+          if tab.isLoading {
+            LoadingRing(size: 22)
+              .foregroundStyle(isActive ? ink : .white)
+              .transition(.opacity.combined(with: .scale(scale: 0.6)))
+          }
         }
-        .buttonStyle(.plain)
-        .opacity(0.8)
-        .help("Close Tab")
+        .frame(width: 18, height: 18)
+
+        Text(tab.title.isEmpty ? tab.url : tab.title)
+          .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+          .kerning(-0.1)
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .contentTransition(.interpolate)
+        Spacer(minLength: 0)
+        // Keeps the close button's space, so the title does not shift on hover.
+        Color.clear.frame(width: 18)
+      }
+      .foregroundStyle(isActive ? AnyShapeStyle(ink) : AnyShapeStyle(.white))
+      .padding(.horizontal, 10)
+      .frame(height: 32)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        if isActive {
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(.white.opacity(0.94))
+            .shadow(color: .black.opacity(0.14), radius: 1.5, y: 1)
+            .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+            .matchedGeometryEffect(id: "active-card", in: selection)
+        } else if hovering {
+          RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(.white.opacity(0.13))
+            .transition(.opacity)
+        }
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(PressStyle())
+    .overlay(alignment: .trailing) {
+      if hovering {
+        CloseButton(onClose: onClose, tint: isActive ? ink : .white)
+          .padding(.trailing, 7)
+          .transition(.scale(scale: 0.5).combined(with: .opacity))
       }
     }
-    .rowStyle(highlighted: isActive, hovering: hovering)
-    .shadow(color: .black.opacity(isActive ? 0.12 : 0), radius: 2, y: 1)
     .onHover { hovering = $0 }
-    .onTapGesture(perform: onSelect)
+    .motion(.easeOut(duration: 0.14), value: hovering)
+    .motion(Motion.press, value: tab.isLoading)
+    .help(tab.url)
     .contextMenu {
       Button("Add to Favorites", action: onFavorite)
       Divider()
@@ -283,20 +481,48 @@ private struct TabRow: View {
   }
 }
 
+private struct CloseButton: View {
+  let onClose: () -> Void
+  let tint: Color
+  @State private var hovering = false
+
+  var body: some View {
+    Button(action: onClose) {
+      Image(systemName: "xmark")
+        .font(.system(size: 9.5, weight: .bold))
+        .frame(width: 18, height: 18)
+        .background(Circle().fill(tint.opacity(hovering ? 0.18 : 0)))
+        .foregroundStyle(tint.opacity(hovering ? 1 : 0.7))
+        .rotationEffect(.degrees(hovering ? 90 : 0))
+        .contentShape(Circle())
+    }
+    .buttonStyle(PressStyle(scale: 0.8))
+    .onHover { hovering = $0 }
+    .motion(Motion.press, value: hovering)
+    .help("Close Tab")
+  }
+}
+
 private struct NewTabRow: View {
   let onTap: () -> Void
   @State private var hovering = false
 
   var body: some View {
-    HStack(spacing: 10) {
-      Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).frame(width: 16)
-      Text("New Tab").font(.system(size: 13, weight: .medium))
-      Spacer(minLength: 0)
+    Button(action: onTap) {
+      HStack(spacing: 10) {
+        Image(systemName: "plus")
+          .font(.system(size: 12.5, weight: .semibold))
+          .rotationEffect(.degrees(hovering ? 90 : 0))
+          .frame(width: 18)
+        Text("New Tab").font(.system(size: 13)).kerning(-0.1)
+        Spacer(minLength: 0)
+      }
+      .opacity(hovering ? 1 : 0.72)
+      .rowBackground(hovering: hovering)
     }
-    .opacity(0.75)
-    .rowStyle(highlighted: false, hovering: hovering)
+    .buttonStyle(PressStyle())
     .onHover { hovering = $0 }
-    .onTapGesture(perform: onTap)
+    .motion(Motion.press, value: hovering)
   }
 }
 
@@ -307,17 +533,21 @@ private struct LinkRow: View {
   @State private var hovering = false
 
   var body: some View {
-    HStack(spacing: 10) {
-      Favicon(url: url)
-      Text(title.isEmpty ? url : title)
-        .font(.system(size: 13, weight: .medium))
-        .lineLimit(1)
-        .truncationMode(.tail)
-      Spacer(minLength: 0)
+    Button(action: onOpen) {
+      HStack(spacing: 10) {
+        Favicon(url: url).frame(width: 18)
+        Text(title.isEmpty ? url : title)
+          .font(.system(size: 13))
+          .kerning(-0.1)
+          .lineLimit(1)
+          .truncationMode(.tail)
+        Spacer(minLength: 0)
+      }
+      .rowBackground(hovering: hovering)
     }
-    .rowStyle(highlighted: false, hovering: hovering)
+    .buttonStyle(PressStyle())
     .onHover { hovering = $0 }
-    .onTapGesture(perform: onOpen)
+    .motion(.easeOut(duration: 0.14), value: hovering)
     .help(url)
   }
 }
@@ -328,29 +558,42 @@ private struct BookmarkTree: View {
   let open: (String) -> Void
   @State private var expanded = false
   @State private var hovering = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     if node.isFolder {
-      HStack(spacing: 10) {
-        Image(systemName: expanded ? "folder.fill" : "folder")
-          .font(.system(size: 13))
-          .frame(width: 16)
-        Text(node.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-        Spacer(minLength: 0)
+      Button {
+        withAnimation(Motion.animation(Motion.list, reduceMotion: reduceMotion)) { expanded.toggle() }
+      } label: {
+        HStack(spacing: 6) {
+          Image(systemName: "chevron.right")
+            .font(.system(size: 8.5, weight: .bold))
+            .rotationEffect(.degrees(expanded ? 90 : 0))
+            .opacity(hovering || expanded ? 0.8 : 0.4)
+            .frame(width: 8)
+          Image(systemName: expanded ? "folder.fill" : "folder")
+            .font(.system(size: 13))
+            .contentTransition(.symbolEffect(.replace))
+            .frame(width: 18)
+          Text(node.title).font(.system(size: 13)).kerning(-0.1).lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        .padding(.leading, CGFloat(depth) * 12)
+        .rowBackground(hovering: hovering, leading: 4)
       }
-      .padding(.leading, CGFloat(depth) * 14)
-      .rowStyle(highlighted: false, hovering: hovering)
+      .buttonStyle(PressStyle())
       .onHover { hovering = $0 }
-      .onTapGesture { withAnimation(.snappy(duration: 0.15)) { expanded.toggle() } }
+      .motion(.easeOut(duration: 0.14), value: hovering)
 
       if expanded {
-        ForEach(node.children) { child in
+        ForEach(Array(node.children.enumerated()), id: \.element.id) { index, child in
           BookmarkTree(node: child, depth: depth + 1, open: open)
+            .cascadeIn(delay: Motion.stagger(index, step: 0.022), distance: 6)
         }
       }
     } else {
       LinkRow(title: node.title, url: node.url ?? "") { open(node.url ?? "") }
-        .padding(.leading, CGFloat(depth) * 14)
+        .padding(.leading, CGFloat(depth) * 12 + (depth > 0 ? 14 : 0))
     }
   }
 }
@@ -412,9 +655,15 @@ private struct ProblemBanner: View {
 }
 
 private extension View {
-  func rowStyle(highlighted: Bool, hovering: Bool) -> some View {
-    padding(.horizontal, 10)
-      .frame(height: 34)
-      .modifier(RowStyle(highlighted: highlighted, hovering: hovering, cornerRadius: 9))
+  /// A plain row: 32 pt high, with a soft fill under the pointer.
+  func rowBackground(hovering: Bool, leading: CGFloat = 10) -> some View {
+    padding(.leading, leading)
+      .padding(.trailing, 10)
+      .frame(height: 32)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .fill(.white.opacity(hovering ? 0.13 : 0)))
+      .contentShape(Rectangle())
   }
 }

@@ -65,6 +65,8 @@ extension EnvironmentValues {
 struct Themed: ViewModifier {
   let theme: ProfileTheme
   var cornerRadius: CGFloat = 10
+  /// Fill the background with the profile's color. Off for glass panels.
+  var fillsBackground = true
   @Environment(\.colorScheme) private var colorScheme
 
   func body(content: Content) -> some View {
@@ -73,8 +75,8 @@ struct Themed: ViewModifier {
       .foregroundStyle(colors.text.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.primary))
       .environment(\.sidebarColors, colors)
       .background {
-        if let background = colors.background {
-          RoundedRectangle(cornerRadius: cornerRadius).fill(background)
+        if fillsBackground, let background = colors.background {
+          RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(background)
         }
       }
   }
@@ -92,7 +94,7 @@ struct RowStyle: ViewModifier {
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
       .background(
-        RoundedRectangle(cornerRadius: cornerRadius)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
           .fill(highlighted ? colors.selected : hovering ? colors.hover : .clear))
   }
 }

@@ -58,7 +58,7 @@ The code that does all of this is short. See `Sources/Sidebar/ChromeController.s
 ## Requirements
 
 - A Mac with Apple silicon (the build script builds for `arm64`)
-- macOS 14 or later
+- macOS 26 (Tahoe) or later
 - Google Chrome
 - Swift 6.2 or later. The Xcode Command Line Tools are enough; you do not need Xcode.
 

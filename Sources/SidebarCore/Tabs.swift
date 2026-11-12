@@ -5,11 +5,14 @@ public struct ChromeTab: Identifiable, Sendable, Equatable {
   public let id: Int
   public let title: String
   public let url: String
+  /// The page is still loading.
+  public let isLoading: Bool
 
-  public init(id: Int, title: String, url: String) {
+  public init(id: Int, title: String, url: String, isLoading: Bool = false) {
     self.id = id
     self.title = title
     self.url = url
+    self.isLoading = isLoading
   }
 }
 
@@ -35,7 +38,8 @@ public struct TabSnapshot: Sendable, Equatable {
   public static let unitSeparator = "\u{1F}"
 
   /// Parses the text that `ChromeScripts.frontWindowTabs` returns:
-  /// `activeIndex RS id US title US url RS id US title US url ...`.
+  /// `activeIndex RS id US loading US title US url RS ...`, where loading is
+  /// `1` or `0`. Records without the loading field are also read.
   /// An empty string means Chrome has no window.
   public static func parse(_ output: String) -> TabSnapshot {
     let records = output.components(separatedBy: recordSeparator)
@@ -43,9 +47,12 @@ public struct TabSnapshot: Sendable, Equatable {
     let tabs = records.dropFirst().compactMap { record -> ChromeTab? in
       let fields = record.components(separatedBy: unitSeparator)
       guard fields.count >= 3, let id = Int(fields[0]) else { return nil }
+      let hasFlag = fields.count >= 4 && (fields[1] == "0" || fields[1] == "1")
+      let titleStart = hasFlag ? 2 : 1
       // A title could in theory hold a separator; the URL is always the last field.
-      let title = fields[1..<(fields.count - 1)].joined(separator: unitSeparator)
-      return ChromeTab(id: id, title: title, url: fields[fields.count - 1])
+      let title = fields[titleStart..<(fields.count - 1)].joined(separator: unitSeparator)
+      return ChromeTab(
+        id: id, title: title, url: fields[fields.count - 1], isLoading: hasFlag && fields[1] == "1")
     }
     return TabSnapshot(tabs: tabs, activeIndex: active)
   }
@@ -63,11 +70,17 @@ public enum ChromeScripts {
       set ids to id of tabs of w
       set titles to title of tabs of w
       set urls to URL of tabs of w
+      set loads to loading of tabs of w
       set rs to character id 30
       set us to character id 31
       set out to (active tab index of w) as text
       repeat with i from 1 to count of ids
-        set out to out & rs & ((item i of ids) as text) & us & (item i of titles) & us & (item i of urls)
+        if item i of loads then
+          set flag to "1"
+        else
+          set flag to "0"
+        end if
+        set out to out & rs & ((item i of ids) as text) & us & flag & us & (item i of titles) & us & (item i of urls)
       end repeat
       return out
     end tell
