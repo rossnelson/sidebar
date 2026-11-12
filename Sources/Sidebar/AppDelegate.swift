@@ -7,11 +7,13 @@ private let layoutLog = Logger(subsystem: "com.ross.sidebar", category: "layout"
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   /// The width kept free left of Chrome for the sidebar and its gaps.
-  static let sidebarWidth: CGFloat = 268
+  static let sidebarWidth: CGFloat = 262
   /// The width kept free while collapsed: a thin strip to hover for the peek.
   static let margin: CGFloat = 8
-  /// The space on each side of the sidebar.
-  static let gap: CGFloat = 8
+  /// The space between the screen edge and the sidebar.
+  static let leftGap: CGFloat = 3
+  /// The space between the sidebar and Chrome.
+  static let rightGap: CGFloat = 5
 
   private let model = SidebarModel()
   private let tracker = ChromeWindowTracker()
@@ -208,7 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     let sidebar = model.isCollapsed
       ? FrameLayout.sidebar(beside: layout.hole, reserved: width, leftGap: 0, rightGap: 2)
-      : FrameLayout.sidebar(beside: layout.hole, reserved: width, leftGap: Self.gap, rightGap: Self.gap)
+      : FrameLayout.sidebar(beside: layout.hole, reserved: width, leftGap: Self.leftGap, rightGap: Self.rightGap)
     place(sidebar)
     holeRect = layout.hole
     updateMousePassThrough()
@@ -385,7 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     frame.size.width += model.isCollapsed ? delta : -delta
     moveChrome(to: frame, animated: true) { [weak self] chromeFrame in
       self?.place(FrameLayout.sidebar(
-        beside: chromeFrame, reserved: Self.sidebarWidth, leftGap: Self.gap, rightGap: Self.gap))
+        beside: chromeFrame, reserved: Self.sidebarWidth, leftGap: Self.leftGap, rightGap: Self.rightGap))
     }
   }
 
@@ -428,8 +430,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     peekGeneration += 1
     // The same place and size as the open sidebar, over Chrome's left edge.
     let target = CGRect(
-      x: frameRect.minX + Self.gap, y: frameRect.minY,
-      width: Self.sidebarWidth - Self.gap * 2, height: frameRect.height)
+      x: frameRect.minX + Self.leftGap, y: frameRect.minY,
+      width: Self.sidebarWidth - Self.leftGap - Self.rightGap, height: frameRect.height)
     let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     peekPanel.appearance = model.theme.appearance
     // Start just off the screen's left edge and slide in; with Reduce Motion, fade in.
