@@ -128,7 +128,7 @@
     <!-- 4 Files -->
     <rect x="286" y="648" width="428" height="44" rx="8" fill="#FFFFFF" stroke="#D1D9E0"/>
     <text x="300" y="667" font-size="13" font-weight="700" fill="#1F2328">Read-only files</text>
-    <text x="300" y="684">Bookmarks, Preferences, Local State. History is copied, then read.</text>
+    <text x="300" y="684">Bookmarks, Preferences, Local State. History, Favicons: copied, then read.</text>
   </g>
 
   <!-- arrows: Sidebar -> Chrome for control, Chrome -> Sidebar for files -->
@@ -158,5 +158,5 @@
     <text x="700" y="774">runs JavaScript in your pages</text>
     <text x="700" y="800">writes to Chrome's profile files</text>
   </g>
-  <text x="40" y="836" font-size="12" fill="#59636E">Network: favicons come from Google's public favicon service, which receives the site's domain. Sidebar sends nothing else.</text>
+  <text x="40" y="836" font-size="12" fill="#59636E">Network: none. Favicons come from Chrome's own favicon cache on your Mac.</text>
 </svg>

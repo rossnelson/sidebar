@@ -133,9 +133,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       self?.model.refreshBookmarks()
       self?.model.refreshTheme()
     }
+    FaviconCache.shared.reload(profileDirectory: model.profileDirectory)
     schedule(every: 15) { [weak self] in
       guard let self, panel.isVisible else { return }
       model.refreshRecents()
+      FaviconCache.shared.reload(profileDirectory: model.profileDirectory)
     }
   }
 

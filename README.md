@@ -38,7 +38,7 @@ System Settings → Privacy & Security.
 | Accessibility | Reads the window's position, size and title. Moves and resizes the window. | Accessibility |
 | Apple Events (Chrome's AppleScript) | Lists, switches, opens and closes tabs. Back, forward, reload. Reads the current URL. | Automation → Google Chrome |
 | Keystrokes | Passes on a Chrome shortcut that you press while the ⌘T palette is open. | Accessibility |
-| Files | Reads `Bookmarks`, `AccountBookmarks`, `Preferences` and `Local State`. Copies `History` to a temporary file to read it, then deletes the copy. | None (your own files) |
+| Files | Reads `Bookmarks`, `AccountBookmarks`, `Preferences` and `Local State`. Copies `History` and `Favicons` to temporary files to read them, then deletes the copies. | None (your own files) |
 
 **Sidebar never:**
 
@@ -48,9 +48,8 @@ System Settings → Privacy & Security.
 - runs JavaScript in your pages (it does not use Chrome's "Allow JavaScript from Apple Events" setting)
 - writes to Chrome's profile files
 
-**Network.** Sidebar shows favicons from Google's public favicon service
-(`google.com/s2/favicons`), which receives each site's domain. Sidebar makes
-no other network requests. Web searches from the palette open in Chrome.
+**Network.** Sidebar makes no network requests. Favicons come from Chrome's own
+favicon cache on your Mac. Web searches from the palette open in Chrome.
 
 The code that does all of this is short. See `Sources/Sidebar/ChromeController.swift`,
 `Sources/Sidebar/ChromeWindowTracker.swift` and `Sources/SidebarCore`.

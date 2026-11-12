@@ -135,13 +135,18 @@ final class PaletteController: NSObject, NSWindowDelegate {
   }
 
   /// Centered over Chrome's window, a quarter of the way down.
+  /// Room around the palette inside its window, for the palette's own shadow.
+  static let shadowMargin: CGFloat = 48
+
   private func frame(over windowFrame: CGRect?) -> CGRect {
     let area = windowFrame ?? NSScreen.main?.visibleFrame ?? .zero
     let size = Self.size
+    let margin = Self.shadowMargin
+    // The palette hangs from its top edge and grows downward with its results.
     return CGRect(
-      x: area.midX - size.width / 2,
-      y: area.maxY - area.height * 0.22 - size.height,
-      width: size.width, height: size.height)
+      x: area.midX - size.width / 2 - margin,
+      y: area.maxY - area.height * 0.22 - size.height - margin,
+      width: size.width + margin * 2, height: size.height + margin * 2)
   }
 
   func windowDidResignKey(_ notification: Notification) {
@@ -212,7 +217,8 @@ final class PalettePanel: NSPanel {
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
     isOpaque = false
     backgroundColor = .clear
-    hasShadow = true
+    // The view draws its own shadow, which follows its changing height.
+    hasShadow = false
     hidesOnDeactivate = false
     isMovable = false
     // The view animates its own entrance.
@@ -235,6 +241,18 @@ struct PaletteView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   static let cornerRadius: CGFloat = 22
+
+  /// Tall enough for the results, up to the full size: the field, the rows and the key hints.
+  private func height(for results: [PaletteResult]) -> CGFloat {
+    let rows = results.reduce(CGFloat(0)) { total, result in
+      switch result.kind {
+      case .search, .url: total + 35
+      default: total + 51
+      }
+    }
+    let chrome: CGFloat = 58 + 1 + 16 + 38
+    return min(PaletteController.size.height, chrome + max(rows, 35))
+  }
 
   var body: some View {
     let results = state.results
@@ -294,11 +312,18 @@ struct PaletteView: View {
       .padding(.horizontal, 18)
       .padding(.vertical, 10)
     }
-    .frame(width: PaletteController.size.width, height: PaletteController.size.height)
+    .frame(width: PaletteController.size.width, height: height(for: results))
     .modifier(Themed(theme: state.theme, cornerRadius: Self.cornerRadius, fillsBackground: false))
     .glassEffect(.regular.tint(accent.opacity(0.18)), in: shape)
     .overlay(shape.strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
-    .scaleEffect(appeared || reduceMotion ? 1 : 0.94)
+    .background(shape.fill(.black.opacity(0.001)).shadow(color: .black.opacity(0.28), radius: 28, y: 14))
+    .motion(.spring(response: 0.32, dampingFraction: 0.86), value: height(for: results))
+    .padding(PaletteController.shadowMargin)
+    .frame(
+      width: PaletteController.size.width + PaletteController.shadowMargin * 2,
+      height: PaletteController.size.height + PaletteController.shadowMargin * 2,
+      alignment: .top)
+    .scaleEffect(appeared || reduceMotion ? 1 : 0.94, anchor: .top)
     .opacity(appeared ? 1 : 0)
     .blur(radius: appeared || reduceMotion ? 0 : 6)
     .onAppear {

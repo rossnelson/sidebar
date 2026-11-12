@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SQLite3
 import Testing
 @testable import SidebarCore
 
@@ -120,6 +121,28 @@ import Testing
     let cocoa = ScreenCoordinates.flip(ax, primaryScreenHeight: 1000)
     #expect(cocoa == CGRect(x: 10, y: 930, width: 100, height: 50))
     #expect(ScreenCoordinates.flip(cocoa, primaryScreenHeight: 1000) == ax)
+  }
+}
+
+@Suite struct FaviconCache {
+  @Test func `prefers a 32 px icon and falls back to the site`() throws {
+    let file = FileManager.default.temporaryDirectory.appending(path: "favicons-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: file) }
+    var db: OpaquePointer?
+    #expect(sqlite3_open(file.path, &db) == SQLITE_OK)
+    let setup = """
+      CREATE TABLE icon_mapping(id INTEGER PRIMARY KEY, page_url TEXT, icon_id INTEGER);
+      CREATE TABLE favicon_bitmaps(id INTEGER PRIMARY KEY, icon_id INTEGER, image_data BLOB, width INTEGER);
+      INSERT INTO icon_mapping VALUES (1, 'https://www.example.com/a', 7);
+      INSERT INTO favicon_bitmaps VALUES (1, 7, x'10', 16), (2, 7, x'20', 32), (3, 7, x'40', 64);
+      """
+    #expect(sqlite3_exec(db, setup, nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+
+    let index = try FaviconIndex.query(databaseFile: file)
+    #expect(index.icon(for: "https://www.example.com/a") == Data([0x20]))
+    #expect(index.icon(for: "https://example.com/other") == Data([0x20]))
+    #expect(index.icon(for: "https://unknown.com/") == nil)
   }
 }
 

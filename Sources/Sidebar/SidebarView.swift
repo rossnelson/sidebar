@@ -119,7 +119,7 @@ struct SidebarView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {
           if !model.spaceName.isEmpty {
-            SpaceLabel(name: model.spaceName)
+            SpaceLabel(name: model.spaceName, tabCount: model.snapshot.tabs.count)
               .cascadeIn(delay: 0.09)
           }
 
@@ -134,9 +134,11 @@ struct SidebarView: View {
               .cascadeIn(delay: 0.14)
           }
 
+          let details = TabRow.details(for: model.snapshot.tabs)
           ForEach(Array(model.snapshot.tabs.enumerated()), id: \.element.id) { index, tab in
             TabRow(
               tab: tab,
+              detail: details[tab.id],
               isActive: tab.id == model.snapshot.activeTabID,
               selection: selection,
               onSelect: { model.activate(tab) },
@@ -151,11 +153,18 @@ struct SidebarView: View {
         }
         .motion(Motion.glide, value: model.snapshot.activeTabID)
         .motion(Motion.list, value: model.snapshot.tabs.map(\.id))
-        .padding(.top, 6)
-        .padding(.bottom, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 18)
       }
       .scrollIndicators(.never)
-      .scrollClipDisabled(false)
+      // Rows fade out at the list's edges instead of being cut off.
+      .mask {
+        VStack(spacing: 0) {
+          LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 10)
+          Color.black
+          LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 18)
+        }
+      }
     }
     .padding(.horizontal, 10)
     .padding(.top, 10)
@@ -297,6 +306,7 @@ private extension String {
 /// show; an empty space shows one dashed tile that explains how to add one.
 private struct FavoritesGrid: View {
   let model: SidebarModel
+  @State private var dropTargeted = false
   private let columns = Array(
     repeating: GridItem(.flexible(), spacing: 8), count: FavoritesStore.columns)
 
@@ -308,7 +318,7 @@ private struct FavoritesGrid: View {
           .strokeBorder(.white.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
           .frame(height: 44)
           .overlay(Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).opacity(0.6))
-          .help("Right-click a tab and choose Add to Favorites")
+          .help("Drag a tab here, or right-click a tab and choose Add to Favorites")
       }
       ForEach(Array(favorites.enumerated()), id: \.element.id) { index, favorite in
         FavoriteTile(
@@ -319,7 +329,19 @@ private struct FavoritesGrid: View {
         .transition(.scale(scale: 0.4).combined(with: .opacity))
       }
     }
+    .padding(dropTargeted ? 4 : 0)
+    .background(
+      RoundedRectangle(cornerRadius: 15, style: .continuous)
+        .fill(.white.opacity(dropTargeted ? 0.14 : 0))
+        .strokeBorder(.white.opacity(dropTargeted ? 0.6 : 0), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+    .scaleEffect(dropTargeted ? 1.02 : 1)
+    .dropDestination(for: String.self) { items, _ in
+      let added = items.compactMap(FavoriteDrag.parse)
+      for favorite in added { model.addFavorite(favorite) }
+      return !added.isEmpty
+    } isTargeted: { dropTargeted = $0 }
     .motion(Motion.press, value: favorites.map(\.id))
+    .motion(Motion.press, value: dropTargeted)
   }
 }
 
@@ -330,7 +352,10 @@ private struct FavoriteTile: View {
   let onRemove: () -> Void
   @State private var hovering = false
   @State private var taps = 0
+  @State private var tilt = CGSize.zero
+  @State private var size = CGSize.zero
   @Environment(\.spaceAccent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     Button {
@@ -356,10 +381,21 @@ private struct FavoriteTile: View {
             .strokeBorder(.white.opacity(hovering && !isActive ? 0.25 : 0), lineWidth: 0.5))
         .scaleEffect(hovering ? 1.05 : 1)
         .offset(y: hovering ? -1.5 : 0)
+        // Leans toward the pointer.
+        .rotation3DEffect(
+          .degrees(hovering && !reduceMotion ? 14 : 0),
+          axis: (x: -tilt.height, y: tilt.width, z: 0), perspective: 0.5)
         .contentShape(Rectangle())
     }
     .buttonStyle(PressStyle(scale: 0.9))
+    .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+    .onContinuousHover { phase in
+      guard case .active(let location) = phase, size.width > 0 else { return }
+      tilt = CGSize(
+        width: (location.x / size.width - 0.5) * 2, height: (location.y / size.height - 0.5) * 2)
+    }
     .onHover { hovering = $0 }
+    .motion(Motion.trail, value: tilt)
     .motion(Motion.press, value: hovering)
     .motion(Motion.glide, value: isActive)
     .help(favorite.title)
@@ -371,7 +407,7 @@ private struct FavoriteTile: View {
 
 private struct SpaceLabel: View {
   let name: String
-  @Environment(\.spaceAccent) private var accent
+  let tabCount: Int
 
   var body: some View {
     HStack(spacing: 6) {
@@ -382,11 +418,21 @@ private struct SpaceLabel: View {
       Text(name.uppercased())
         .font(.system(size: 10.5, weight: .semibold))
         .kerning(0.9)
+      Spacer(minLength: 4)
+      Text("\(tabCount)")
+        .font(.system(size: 10, weight: .semibold, design: .rounded))
+        .monospacedDigit()
+        .contentTransition(.numericText(value: Double(tabCount)))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1)
+        .background(.white.opacity(0.14), in: Capsule())
+        .help("\(tabCount) open tabs in this window")
     }
     .opacity(0.62)
     .padding(.horizontal, 10)
-    .padding(.top, 6)
+    .padding(.top, 2)
     .padding(.bottom, 4)
+    .motion(.snappy, value: tabCount)
   }
 }
 
@@ -405,6 +451,8 @@ private struct FadingDivider: View {
 
 private struct TabRow: View {
   let tab: ChromeTab
+  /// Part of the URL, shown when another tab has the same title.
+  let detail: String?
   let isActive: Bool
   let selection: Namespace.ID
   let onSelect: () -> Void
@@ -438,6 +486,15 @@ private struct TabRow: View {
           .lineLimit(1)
           .truncationMode(.tail)
           .contentTransition(.interpolate)
+          .layoutPriority(1)
+        if let detail {
+          Text(detail)
+            .font(.system(size: 11))
+            .opacity(0.55)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .transition(.opacity)
+        }
         Spacer(minLength: 0)
         // Keeps the close button's space, so the title does not shift on hover.
         Color.clear.frame(width: 18)
@@ -462,6 +519,15 @@ private struct TabRow: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(PressStyle())
+    .draggable(FavoriteDrag.payload(url: tab.url, title: tab.title)) {
+      HStack(spacing: 8) {
+        Favicon(url: tab.url)
+        Text(tab.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+      }
+      .padding(.horizontal, 10)
+      .frame(height: 30)
+      .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
     .overlay(alignment: .trailing) {
       if hovering {
         CloseButton(onClose: onClose, tint: isActive ? ink : .white)
@@ -478,6 +544,42 @@ private struct TabRow: View {
       Divider()
       Button("Close Tab", action: onClose)
     }
+  }
+}
+
+extension TabRow {
+  /// Labels that tell apart tabs with the same title: the host (with its
+  /// port) when their sites differ, else the path when their pages differ.
+  /// Tabs on the very same page get no label.
+  static func details(for tabs: [ChromeTab]) -> [Int: String] {
+    var result: [Int: String] = [:]
+    for group in Dictionary(grouping: tabs, by: \.title).values where group.count > 1 {
+      let parts = group.map { (tab: $0, components: URLComponents(string: $0.url)) }
+      func site(_ components: URLComponents?) -> String {
+        let host = components?.host.map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 } ?? ""
+        return components?.port.map { "\(host):\($0)" } ?? host
+      }
+      if Set(parts.map { site($0.components) }).count > 1 {
+        for part in parts { result[part.tab.id] = site(part.components) }
+      } else if Set(parts.map { $0.components?.path ?? "" }).count > 1 {
+        for part in parts { result[part.tab.id] = part.components?.path }
+      }
+    }
+    return result
+  }
+}
+
+/// A tab dragged onto the favorites: its URL and title in one string.
+enum FavoriteDrag {
+  static let separator = "\u{1F}"
+
+  static func payload(url: String, title: String) -> String { url + separator + title }
+
+  static func parse(_ text: String) -> Favorite? {
+    let parts = text.components(separatedBy: separator)
+    let url = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+    guard URL(string: url)?.scheme?.hasPrefix("http") == true else { return nil }
+    return Favorite(url: url, title: parts.count > 1 ? parts[1] : url)
   }
 }
 
@@ -600,24 +702,109 @@ private struct BookmarkTree: View {
 
 // MARK: - Pieces
 
+/// A page's icon: Chrome's own cached favicon, a symbol for Chrome's pages,
+/// or a monogram tile for a site Chrome has no icon for.
 struct Favicon: View {
   let url: String
   var size: CGFloat = 16
 
   var body: some View {
-    AsyncImage(url: Self.source(for: url)) { image in
-      image.resizable().interpolation(.high)
-    } placeholder: {
-      Image(systemName: "globe").opacity(0.6)
+    Group {
+      if url.hasPrefix("chrome://") {
+        Image(systemName: Self.chromeSymbol(for: url))
+          .font(.system(size: size * 0.78, weight: .medium))
+      } else if let image = FaviconCache.shared.image(for: url) {
+        Image(nsImage: image)
+          .resizable()
+          .interpolation(.high)
+          .clipShape(RoundedRectangle(cornerRadius: size / 5, style: .continuous))
+      } else {
+        Monogram(url: url, size: size)
+      }
     }
     .frame(width: size, height: size)
-    .clipShape(RoundedRectangle(cornerRadius: size / 5, style: .continuous))
   }
 
-  /// Chrome's favicon cache is not readable from outside, so use Google's favicon service.
-  static func source(for url: String) -> URL? {
-    guard let host = URL(string: url)?.host(), !host.isEmpty else { return nil }
-    return URL(string: "https://www.google.com/s2/favicons?sz=64&domain=\(host)")
+  static func chromeSymbol(for url: String) -> String {
+    let page = URL(string: url)?.host() ?? ""
+    return switch page {
+    case "newtab", "new-tab-page": "sparkles"
+    case "settings": "gearshape"
+    case "extensions": "puzzlepiece.extension"
+    case "history": "clock"
+    case "downloads": "arrow.down.circle"
+    case "bookmarks": "bookmark"
+    default: "app.dashed"
+    }
+  }
+}
+
+/// A rounded tile with the site's initial, in the surrounding text color.
+private struct Monogram: View {
+  let url: String
+  let size: CGFloat
+
+  var body: some View {
+    RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+      .fill(.quaternary)
+      .overlay {
+        if let letter {
+          Text(letter).font(.system(size: size * 0.6, weight: .bold, design: .rounded))
+        } else {
+          Image(systemName: "server.rack").font(.system(size: size * 0.5, weight: .semibold))
+        }
+      }
+  }
+
+  /// The first letter of the site's name: `portal.vendgogh.io` → V.
+  /// `nil` for a local address, which shows a server symbol.
+  private var letter: String? {
+    guard let host = FaviconIndex.host(of: url) else { return "?" }
+    let labels = host.split(separator: ".")
+    if host == "localhost" || labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) { return nil }
+    let name = labels.count >= 2 ? labels[labels.count - 2] : labels[0]
+    return name.first.map { String($0).uppercased() }
+  }
+}
+
+/// Decoded favicons from Chrome's cache, shared by every view.
+@Observable
+final class FaviconCache {
+  static let shared = FaviconCache()
+
+  private var index = FaviconIndex()
+  @ObservationIgnored private var decoded: [Data: NSImage] = [:]
+  @ObservationIgnored private var loading = false
+  @ObservationIgnored private var lastRead: Date?
+  @ObservationIgnored private var lastFile: URL?
+
+  func image(for url: String) -> NSImage? {
+    guard let data = index.icon(for: url) else { return nil }
+    if let image = decoded[data] { return image }
+    let image = NSImage(data: data)
+    decoded[data] = image
+    return image
+  }
+
+  /// Reads the profile's Favicons database in the background.
+  func reload(profileDirectory: URL) {
+    let file = profileDirectory.appending(path: "Favicons")
+    // Read again only when Chrome has written the file since the last read.
+    let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    guard !loading, modified == nil || modified != lastRead || file != lastFile else { return }
+    lastRead = modified
+    lastFile = file
+    loading = true
+    Task.detached(priority: .utility) {
+      let next = try? FaviconIndex.load(faviconsFile: file)
+      await MainActor.run {
+        if let next, next.byPage.count != self.index.byPage.count || next.byHost.keys != self.index.byHost.keys {
+          self.index = next
+          self.decoded = [:]
+        }
+        self.loading = false
+      }
+    }
   }
 }
 

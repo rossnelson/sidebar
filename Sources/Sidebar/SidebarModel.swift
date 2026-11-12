@@ -84,6 +84,7 @@ final class SidebarModel {
     refreshTheme()
     refreshBookmarks()
     refreshRecents()
+    FaviconCache.shared.reload(profileDirectory: next)
   }
 
   /// Re-reads the profile's theme only when its Preferences file has changed.
@@ -135,8 +136,11 @@ final class SidebarModel {
   }
 
   func addFavorite(_ tab: ChromeTab) {
-    saveFavorites(FavoritesStore.adding(
-      Favorite(url: tab.url, title: tab.title.isEmpty ? tab.url : tab.title), to: favorites))
+    addFavorite(Favorite(url: tab.url, title: tab.title.isEmpty ? tab.url : tab.title))
+  }
+
+  func addFavorite(_ favorite: Favorite) {
+    saveFavorites(FavoritesStore.adding(favorite, to: favorites))
   }
 
   func removeFavorite(_ favorite: Favorite) {
