@@ -12,9 +12,8 @@ final class SidebarPanel: NSPanel {
       backing: .buffered,
       defer: false
     )
-    // A normal window, kept directly below Chrome's window by the app delegate.
-    // The hole is transparent, so a click there reaches Chrome even while the
-    // frame is briefly on top.
+    // A normal window beside Chrome's window, kept directly above it by the
+    // app delegate.
     level = .normal
     collectionBehavior = [.fullScreenNone, .ignoresCycle]
     isOpaque = false
@@ -32,15 +31,6 @@ final class SidebarPanel: NSPanel {
 
   override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
-
-  /// A click would bring the drawer in front of Chrome until it is put back
-  /// below. Keep the window order as it is.
-  override func sendEvent(_ event: NSEvent) {
-    if event.type == .leftMouseDown || event.type == .rightMouseDown {
-      NSApp.preventWindowOrdering()
-    }
-    super.sendEvent(event)
-  }
 }
 
 /// The sidebar sliding out over Chrome's left edge while collapsed.
@@ -76,3 +66,4 @@ final class PeekPanel: NSPanel {
 final class ClickThroughHostingView: NSHostingView<AnyView> {
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
+

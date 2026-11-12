@@ -6,13 +6,12 @@ import SidebarCore
 private let layoutLog = Logger(subsystem: "com.ross.sidebar", category: "layout")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-  static let sidebarWidth: CGFloat = 260
-  /// The drawer's visible width while collapsed: an edge to hover for the peek.
+  /// The width kept free left of Chrome for the sidebar and its gaps.
+  static let sidebarWidth: CGFloat = 268
+  /// The width kept free while collapsed: a thin strip to hover for the peek.
   static let margin: CGFloat = 8
-  /// How far the drawer reaches under Chrome's left edge, hiding its right corners.
-  static let drawerOverlap: CGFloat = 24
-  /// How much shorter the drawer is than Chrome at the top and the bottom.
-  static let drawerInset: CGFloat = 10
+  /// The space on each side of the sidebar.
+  static let gap: CGFloat = 8
 
   private let model = SidebarModel()
   private let tracker = ChromeWindowTracker()
@@ -96,10 +95,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // click in the sidebar can raise our frame. Put the frame back directly below
     // Chrome after each click.
     clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] _ in
-      MainActor.assumeIsolated { self?.keepFrameBelowChrome() }
+      MainActor.assumeIsolated { self?.keepSidebarAboveChrome() }
     }
     localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
-      MainActor.assumeIsolated { self?.keepFrameBelowChrome() }
+      MainActor.assumeIsolated { self?.keepSidebarAboveChrome() }
       return event
     }
     // The frame sits above Chrome, so it must let the mouse through over Chrome's
@@ -159,20 +158,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     {
       moveChrome(to: moved)
     }
-    let drawer = FrameLayout.drawer(
-      beside: layout.hole, visibleWidth: width, overlap: Self.drawerOverlap, inset: Self.drawerInset)
-    panel.appearance = model.theme.appearance
-    // The part of the drawer under Chrome, in the drawer's own coordinates.
-    model.frameHole = CGRect(x: width, y: 0, width: Self.drawerOverlap, height: drawer.height)
-    panel.setFrame(drawer, display: true)
-    frameRect = drawer
+    let sidebar = model.isCollapsed
+      ? FrameLayout.sidebar(beside: layout.hole, reserved: width, leftGap: 0, rightGap: 2)
+      : FrameLayout.sidebar(beside: layout.hole, reserved: width, leftGap: Self.gap, rightGap: Self.gap)
+    place(sidebar)
     holeRect = layout.hole
     updateMousePassThrough()
-    // Sit directly below Chrome's window, so the drawer comes out from under it
-    // and window pickers (screenshots, screen recording) choose Chrome over its
-    // own area. Other apps' windows still cover both.
+    // Sit directly above Chrome's window. The two do not overlap, so window
+    // pickers (screenshots, screen recording) still choose Chrome over its area.
     let wasVisible = panel.isVisible
-    panel.order(.below, relativeTo: window.windowNumber)
+    panel.order(.above, relativeTo: window.windowNumber)
     if !wasVisible { model.refreshTabs() }
   }
 
@@ -211,40 +206,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if panel.ignoresMouseEvents != overChrome { panel.ignoresMouseEvents = overChrome }
   }
 
-  private func keepFrameBelowChrome() {
+  private func keepSidebarAboveChrome() {
     guard panel.isVisible, let number = chromeWindow?.windowNumber else { return }
-    panel.order(.below, relativeTo: number)
+    panel.order(.above, relativeTo: number)
+  }
+
+  private func place(_ sidebar: CGRect) {
+    panel.appearance = model.theme.appearance
+    // The content's width, in the panel's own coordinates.
+    model.frameHole = CGRect(x: sidebar.width, y: 0, width: 0, height: sidebar.height)
+    panel.setFrame(sidebar, display: true)
+    // During the slide, commit each frame now; otherwise the window server
+    // shows only the last one.
+    CATransaction.flush()
+    frameRect = sidebar
   }
 
   // MARK: - Collapse and peek
 
-  /// Collapses to a thin edge or expands, moving Chrome's window into or out of
-  /// the sidebar's space so the two keep their total width.
+  /// Collapses to a thin strip or expands. Chrome's left edge slides, and the
+  /// sidebar slides with it: off the screen to the left, or back in.
   private func toggleCollapse() {
     hidePeek()
     model.isCollapsed.toggle()
-    guard var window = chromeWindow else { return }
+    guard let window = chromeWindow else { return }
     let delta = Self.sidebarWidth - Self.margin
     var frame = window.frame
-    if model.isCollapsed {
-      frame.origin.x -= delta
-      frame.size.width += delta
-      // Chrome grows over the drawer first; the drawer shrinks once it is
-      // covered (the layout after the move), so both look like one motion.
-      moveChrome(to: frame, animated: true)
-    } else {
-      frame.origin.x += delta
-      frame.size.width -= delta
-      // The drawer opens under Chrome first, then Chrome's edge moves off it.
-      window.frame = frame
-      layout(window)
-      moveChrome(to: frame, animated: true)
+    frame.origin.x += model.isCollapsed ? -delta : delta
+    frame.size.width += model.isCollapsed ? delta : -delta
+    moveChrome(to: frame, animated: true) { [weak self] chromeFrame in
+      self?.place(FrameLayout.sidebar(
+        beside: chromeFrame, reserved: Self.sidebarWidth, leftGap: Self.gap, rightGap: Self.gap))
     }
   }
 
   /// Moves Chrome's window step by step, ignoring its events until the move is
   /// done, then lays out once from where it really ended up.
-  private func moveChrome(to frame: CGRect, animated: Bool = false) {
+  private func moveChrome(
+    to frame: CGRect, animated: Bool = false, onStep: @escaping (CGRect) -> Void = { _ in }
+  ) {
     layoutLog.debug("moveChrome to \(String(describing: frame), privacy: .public)")
     requestedFrame = frame
     settleUntil = .distantFuture
@@ -252,7 +252,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     moveTask = Task { [weak self] in
       guard let self else { return }
       await tracker.moveCurrentWindow(
-        to: frame, animated: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        to: frame, animated: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+        onStep: onStep)
       guard !Task.isCancelled else { return }
       settleUntil = .distantPast
       tracker.update()

@@ -131,15 +131,14 @@ public struct FrameLayout: Sendable, Equatable {
       frame: frame, hole: target, windowFrame: target.isClose(to: window, within: 0.5) ? nil : target)
   }
 
-  /// The sidebar drawer beside Chrome's window: `visibleWidth` to the left of
-  /// it, reaching `overlap` under its left edge, and `inset` shorter at the top
-  /// and the bottom, so it looks like it slides out from under Chrome.
-  public static func drawer(
-    beside window: CGRect, visibleWidth: CGFloat, overlap: CGFloat, inset: CGFloat
+  /// The sidebar panel beside Chrome's window: in the `reserved` width left of
+  /// it, with `leftGap` and `rightGap` kept clear, and the window's full height.
+  public static func sidebar(
+    beside window: CGRect, reserved: CGFloat, leftGap: CGFloat, rightGap: CGFloat
   ) -> CGRect {
     CGRect(
-      x: window.minX - visibleWidth, y: window.minY + inset,
-      width: visibleWidth + overlap, height: max(window.height - inset * 2, 0))
+      x: window.minX - reserved + leftGap, y: window.minY,
+      width: max(reserved - leftGap - rightGap, 0), height: window.height)
   }
 
   /// The hole in the frame's own coordinates, with a top-left origin (SwiftUI).

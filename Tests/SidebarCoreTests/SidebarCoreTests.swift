@@ -294,10 +294,10 @@ import Testing
     #expect(layout.holeInFrame == CGRect(x: 260, y: 8, width: 1000, height: 800))
   }
 
-  @Test func `the drawer sits left of Chrome and reaches under it`() {
+  @Test func `the sidebar sits left of Chrome with gaps`() {
     let window = CGRect(x: 260, y: 0, width: 1252, height: 900)
-    let drawer = FrameLayout.drawer(beside: window, visibleWidth: 260, overlap: 24, inset: 10)
-    #expect(drawer == CGRect(x: 0, y: 10, width: 284, height: 880))
+    let sidebar = FrameLayout.sidebar(beside: window, reserved: 260, leftGap: 8, rightGap: 8)
+    #expect(sidebar == CGRect(x: 8, y: 0, width: 244, height: 900))
   }
 
   @Test func `insets a maximized window on every side`() {

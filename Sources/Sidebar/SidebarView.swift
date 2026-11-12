@@ -2,13 +2,13 @@ import AppKit
 import SidebarCore
 import SwiftUI
 
-/// The drawer: the space's gradient and the sidebar. Its right part
-/// (`frameHole`) lies under Chrome's window.
+/// The sidebar panel: the space's gradient and the sidebar. `frameHole.minX`
+/// is the content's width.
 struct FrameView: View {
   let model: SidebarModel
   @Environment(\.colorScheme) private var colorScheme
 
-  /// The drawer's corners.
+  /// The sidebar panel's corners.
   nonisolated static let outerCornerRadius: CGFloat = 16
 
   var body: some View {
@@ -16,8 +16,8 @@ struct FrameView: View {
       RoundedRectangle(cornerRadius: FrameView.outerCornerRadius, style: .continuous)
         .fill(SpaceColors.gradient(for: model.theme, dark: colorScheme == .dark))
 
-      // The visible width, not `isCollapsed`: while collapsing, the drawer keeps
-      // its content until Chrome has covered it.
+      // The panel's width, not `isCollapsed`: while it slides, the panel keeps
+      // its content.
       if model.frameHole.minX < 40 {
         // The left border: hovering it slides the sidebar out over Chrome.
         Color.clear

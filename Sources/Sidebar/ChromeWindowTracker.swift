@@ -107,7 +107,10 @@ final class ChromeWindowTracker {
   /// position and drops the move. So change one value, wait until Chrome reports
   /// it, then change the next. Shrink before moving and move before growing, so
   /// the window never hangs off the screen (macOS would clamp it).
-  func moveCurrentWindow(to frame: CGRect, animated: Bool = false) async {
+  /// `onStep` receives each in-between frame of the animation (Cocoa coordinates).
+  func moveCurrentWindow(
+    to frame: CGRect, animated: Bool = false, onStep: (CGRect) -> Void = { _ in }
+  ) async {
     guard let window = currentWindow else { return }
     let target = ScreenCoordinates.flip(frame, primaryScreenHeight: Self.primaryScreenHeight)
 
@@ -123,7 +126,7 @@ final class ChromeWindowTracker {
     }
 
     if animated, let start = frameInAXCoordinates(of: window) {
-      await slideLeftEdge(of: window, from: start, to: target)
+      await slideLeftEdge(of: window, from: start, to: target, onStep: onStep)
     }
 
     for _ in 0..<3 {
@@ -144,7 +147,9 @@ final class ChromeWindowTracker {
   /// second, easing out, while the right edge stays where it is. Each step sets
   /// the position and the size together. Both frames are in AX coordinates.
   /// Does nothing unless only the left edge changes (showing or hiding the sidebar).
-  private func slideLeftEdge(of window: AXUIElement, from start: CGRect, to target: CGRect) async {
+  private func slideLeftEdge(
+    of window: AXUIElement, from start: CGRect, to target: CGRect, onStep: (CGRect) -> Void
+  ) async {
     guard abs(start.maxX - target.maxX) <= 1, abs(start.minY - target.minY) <= 1,
       abs(start.height - target.height) <= 1
     else { return }
@@ -166,6 +171,7 @@ final class ChromeWindowTracker {
         await setSize(step.size, of: window)
         await setPosition(step.origin, of: window)
       }
+      onStep(ScreenCoordinates.flip(step, primaryScreenHeight: Self.primaryScreenHeight))
     }
   }
 
