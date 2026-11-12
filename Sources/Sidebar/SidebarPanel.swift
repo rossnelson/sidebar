@@ -12,8 +12,9 @@ final class SidebarPanel: NSPanel {
       backing: .buffered,
       defer: false
     )
-    // A normal window, kept directly above Chrome's window by the app delegate,
-    // so the border covers Chrome's shadow. Clicks in the transparent hole reach Chrome.
+    // A normal window, kept directly below Chrome's window by the app delegate.
+    // The hole is transparent, so a click there reaches Chrome even while the
+    // frame is briefly on top.
     level = .normal
     collectionBehavior = [.fullScreenNone, .ignoresCycle]
     isOpaque = false

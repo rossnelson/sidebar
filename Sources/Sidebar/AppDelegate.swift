@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var settleUntil = Date.distantPast
   private var moveTask: Task<Void, Never>?
   private var clickMonitor: Any?
+  private var localClickMonitor: Any?
   private var moveMonitors: [Any] = []
   /// Where Chrome's window sits, in screen coordinates.
   private var holeRect: CGRect?
@@ -87,10 +88,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     tracker.start()
 
-    // A click in Chrome brings its window to the front, over our frame, without an
-    // Accessibility event. Put the frame back above it right after each click.
+    // A click in Chrome raises its window without an Accessibility event, and a
+    // click in the sidebar can raise our frame. Put the frame back directly below
+    // Chrome after each click.
     clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] _ in
-      MainActor.assumeIsolated { self?.raiseFrameAboveChrome() }
+      MainActor.assumeIsolated { self?.keepFrameBelowChrome() }
+    }
+    localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
+      MainActor.assumeIsolated { self?.keepFrameBelowChrome() }
+      return event
     }
     // The frame sits above Chrome, so it must let the mouse through over Chrome's
     // window. Transparent pixels alone do not: the frame would catch Chrome's clicks.
@@ -148,11 +154,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     frameRect = layout.frame
     holeRect = layout.hole
     updateMousePassThrough()
-    // Sit directly above Chrome's window, so the border covers Chrome's shadow.
-    // The hole is transparent and matches Chrome's corners, so Chrome stays visible
-    // and clickable. Other apps' windows still cover both.
+    // Sit directly below Chrome's window. Chrome is then the top window over its
+    // own area, so window pickers (screenshots, screen recording) choose Chrome
+    // there and the frame only around it. Other apps' windows still cover both.
     let wasVisible = panel.isVisible
-    panel.order(.above, relativeTo: window.windowNumber)
+    panel.order(.below, relativeTo: window.windowNumber)
     if !wasVisible { model.refreshTabs() }
   }
 
@@ -191,9 +197,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if panel.ignoresMouseEvents != overChrome { panel.ignoresMouseEvents = overChrome }
   }
 
-  private func raiseFrameAboveChrome() {
+  private func keepFrameBelowChrome() {
     guard panel.isVisible, let number = chromeWindow?.windowNumber else { return }
-    panel.order(.above, relativeTo: number)
+    panel.order(.below, relativeTo: number)
   }
 
   // MARK: - Collapse and peek
