@@ -2,8 +2,8 @@
 
 An Arc-style frame and sidebar for Google Chrome on macOS.
 
-Sidebar is a small menu-bar app. It puts a sidebar on the left of your Chrome
-window, tucked under Chrome's left edge like a drawer, with:
+Sidebar is a small menu-bar app. It puts a sidebar panel on the left of your
+Chrome window, with:
 
 - your open tabs
 - your Chrome bookmarks (synced and local)
@@ -19,7 +19,7 @@ window, so each profile gets its own look.
 ## A sidecar, not a wrapper
 
 Sidebar does not contain, embed or modify Chrome. It is a separate app that
-draws its own window next to Chrome's window, just below it. You keep using the real Google
+draws its own window next to Chrome's window. You keep using the real Google
 Chrome that you installed from Google.
 
 **Chrome stays as it is:**

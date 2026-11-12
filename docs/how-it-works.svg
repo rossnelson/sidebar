@@ -24,7 +24,7 @@
   <!-- desktop -->
   <rect x="40" y="128" width="560" height="236" rx="10" fill="#EEF0F3"/>
   <!-- Sidebar's window: the drawer, partly under Chrome -->
-  <rect x="56" y="160" width="172" height="172" rx="12" fill="url(#space)"/>
+  <rect x="56" y="150" width="140" height="192" rx="11" fill="url(#space)"/>
   <!-- sidebar contents -->
   <rect x="66" y="170" width="128" height="16" rx="8" fill="#FFFFFF" fill-opacity="0.35"/>
   <g fill="#FFFFFF" fill-opacity="0.3">
@@ -72,7 +72,7 @@
     <rect x="636" y="320" width="324" height="78" rx="10" fill="#F0EDFC"/>
     <text x="652" y="344" font-weight="700" fill="#6E56CF">Sidebar's window</text>
     <text x="652" y="364">A separate app draws the sidebar next to</text>
-    <text x="652" y="382">Chrome, tucked under it, not inside it.</text>
+    <text x="652" y="382">Chrome, not inside it.</text>
   </g>
 
   <!-- ============ Section 2: how they talk ============ -->
