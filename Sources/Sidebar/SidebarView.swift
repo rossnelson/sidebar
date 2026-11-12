@@ -126,8 +126,7 @@ struct SidebarView: View {
       }
       .scrollIndicators(.never)
     }
-    .padding(.leading, 10)
-    .padding(.trailing, 6)
+    .padding(.horizontal, 10)
     .padding(.top, 10)
   }
 }
