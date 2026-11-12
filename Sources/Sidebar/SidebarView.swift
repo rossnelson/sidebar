@@ -128,8 +128,10 @@ struct SidebarView: View {
 
       if model.spaces.count > 1 {
         SpaceSwitcher(
-          spaces: model.spaces, current: model.spaceDirectory,
-          onSwitch: model.switchSpace, onSettings: model.openSettings)
+          spaces: model.spaces, current: model.spaceDirectory, icons: model.spaceIcons,
+          onSwitch: model.switchSpace,
+          onChooseIcon: { space, icon in model.spaceIcons[space.directory] = icon },
+          onSettings: model.openSettings)
           .padding(.bottom, 8)
           .cascadeIn(delay: 0.22)
       }
@@ -188,13 +190,14 @@ private struct SpaceContent: View {
               onReset: { model.resetPin(pin) },
               onClose: { model.closePinnedTab(pin) },
               onUnpin: { model.unpin(pin) },
-              onMove: { model.movePin($0, to: pin.id) })
+              onMove: { model.movePin($0, to: pin.id) },
+              isKeyboardSelected: model.keyboardSelection == "pin:\(pin.id)")
             .cascadeIn(delay: 0.1 + Motion.stagger(index))
             .transition(rowTransition)
           }
 
           ForEach(Array(model.bookmarks.enumerated()), id: \.element.id) { index, node in
-            BookmarkTree(node: node, depth: 0, open: model.open)
+            BookmarkTree(node: node, depth: 0, model: model)
               .cascadeIn(delay: 0.1 + Motion.stagger(index))
           }
 
@@ -215,6 +218,8 @@ private struct SpaceContent: View {
               onClose: { model.close(tab) },
               onFavorite: { model.addFavorite(tab) },
               onPin: { model.pin(tab) },
+              isKeyboardSelected: model.keyboardSelection == "tab:\(tab.id)",
+              onMove: { model.moveTab($0, to: tab.id) },
               onPreview: { frame in model.showPreview(frame.map { _ in tab }, frame ?? .zero) },
               previewDelay: { model.isPreviewing ? 0.06 : 0.75 })
             .cascadeIn(delay: 0.16 + Motion.stagger(index))
@@ -424,8 +429,12 @@ private struct FavoritesGrid: View {
           handled = true
         }
       }
+      if handled { Haptics.step() }
       return handled
-    } isTargeted: { dropTargeted = $0 }
+    } isTargeted: { targeted in
+      dropTargeted = targeted
+      if targeted { Haptics.snap() }
+    }
     .motion(Motion.press, value: favorites.map(\.id))
     .motion(Motion.press, value: dropTargeted)
   }
@@ -487,8 +496,13 @@ private struct FavoriteTile: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
     .dropDestination(for: String.self) { items, _ in
-      items.reduce(false) { $0 || onDrop($1) }
-    } isTargeted: { dropTargeted = $0 }
+      let used = items.reduce(false) { $0 || onDrop($1) }
+      if used { Haptics.step() }
+      return used
+    } isTargeted: { targeted in
+      dropTargeted = targeted
+      if targeted { Haptics.snap() }
+    }
     .motion(Motion.press, value: dropTargeted)
     .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
     .onContinuousHover { phase in
@@ -591,14 +605,19 @@ private struct ClearButton: View {
 private struct SpaceSwitcher: View {
   let spaces: [SidebarModel.Space]
   let current: String
+  let icons: [String: String]
   let onSwitch: (SidebarModel.Space) -> Void
+  let onChooseIcon: (SidebarModel.Space, String?) -> Void
   let onSettings: () -> Void
   @Namespace private var selection
 
   var body: some View {
     HStack(spacing: 4) {
       ForEach(spaces) { space in
-        SpaceIcon(space: space, isCurrent: space.directory == current, selection: selection) { onSwitch(space) }
+        SpaceIcon(
+          space: space, isCurrent: space.directory == current, icon: icons[space.directory],
+          selection: selection, onChoose: { onChooseIcon(space, $0) }
+        ) { onSwitch(space) }
       }
       Spacer(minLength: 0)
       IconButton(symbol: "gearshape", help: "Settings", action: onSettings)
@@ -612,15 +631,24 @@ private struct SpaceSwitcher: View {
 private struct SpaceIcon: View {
   let space: SidebarModel.Space
   let isCurrent: Bool
+  /// `sf:<symbol>`, `emoji:<character>`, or `nil` for the first letter.
+  let icon: String?
   let selection: Namespace.ID
+  let onChoose: (String?) -> Void
   let onTap: () -> Void
   @State private var hovering = false
   @Environment(\.colorScheme) private var colorScheme
 
+  static let symbols = [
+    "house.fill", "briefcase.fill", "star.fill", "bolt.fill", "leaf.fill", "flame.fill",
+    "heart.fill", "book.fill", "hammer.fill", "globe", "moon.fill", "paintpalette.fill",
+  ]
+  static let emoji = ["🏠", "💼", "🚀", "🎨", "🧪", "🌱", "🔥", "📚", "🎧", "☕️", "🌊", "⭐️"]
+
   var body: some View {
     let palette = SpaceColors.palette(for: space.theme, dark: colorScheme == .dark)
     Button(action: onTap) {
-      Text(letter)
+      glyph
         .font(.system(size: 11.5, weight: .bold, design: .rounded))
         .foregroundStyle(isCurrent ? Color(palette.ink) : .white.opacity(hovering ? 1 : 0.75))
         .frame(width: 24, height: 24)
@@ -649,6 +677,32 @@ private struct SpaceIcon: View {
     .onHover { hovering = $0 }
     .motion(Motion.press, value: hovering)
     .help(isCurrent ? space.name : "Switch to \(space.name)")
+    .contextMenu {
+      Menu("Symbol") {
+        ForEach(Self.symbols, id: \.self) { symbol in
+          Button { onChoose("sf:\(symbol)") } label: { Label(symbol.replacingOccurrences(of: ".fill", with: "").capitalized, systemImage: symbol) }
+        }
+      }
+      Menu("Emoji") {
+        ForEach(Self.emoji, id: \.self) { emoji in
+          Button(emoji) { onChoose("emoji:\(emoji)") }
+        }
+      }
+      if icon != nil {
+        Divider()
+        Button("Use First Letter") { onChoose(nil) }
+      }
+    }
+  }
+
+  @ViewBuilder private var glyph: some View {
+    if let icon, icon.hasPrefix("sf:") {
+      Image(systemName: String(icon.dropFirst(3))).font(.system(size: 11, weight: .semibold))
+    } else if let icon, icon.hasPrefix("emoji:") {
+      Text(String(icon.dropFirst(6))).font(.system(size: 13))
+    } else {
+      Text(letter)
+    }
   }
 
   /// The first letter of the profile's name: Work → W.
@@ -680,11 +734,16 @@ private struct TabRow: View {
   let onClose: () -> Void
   let onFavorite: () -> Void
   let onPin: () -> Void
+  /// The keyboard has selected this row (⌃⌘↓).
+  let isKeyboardSelected: Bool
+  /// Another tab dropped on this one, by its ID.
+  let onMove: (Int) -> Void
   /// Shows the preview card beside this row (its frame), or hides it (`nil`).
   let onPreview: (CGRect?) -> Void
   /// Seconds to rest on the row before its card shows.
   let previewDelay: () -> Double
   @State private var hovering = false
+  @State private var dropTargeted = false
   @State private var frame = CGRect.zero
   @State private var previewTask: Task<Void, Never>?
   @Environment(\.spaceInk) private var ink
@@ -742,16 +801,34 @@ private struct TabRow: View {
             .shadow(color: .black.opacity(0.14), radius: 1.5, y: 1)
             .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
             .matchedGeometryEffect(id: "active-card", in: selection)
-        } else if hovering {
+        } else if hovering || isKeyboardSelected {
           RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(.white.opacity(0.13))
             .transition(.opacity)
         }
       }
+      .overlay(alignment: .top) {
+        // Where a dragged tab lands.
+        if dropTargeted {
+          Capsule().fill(.white).frame(height: 2).padding(.horizontal, 6).offset(y: -2)
+            .transition(.opacity.combined(with: .scale(scale: 0.6)))
+        }
+      }
+      .keyboardRing(isKeyboardSelected)
       .contentShape(Rectangle())
     }
     .buttonStyle(PressStyle())
-    .draggable(FavoriteDrag.payload(url: tab.url, title: tab.title)) {
+    .dropDestination(for: String.self) { items, _ in
+      let ids = items.compactMap(FavoriteDrag.tabID).filter { $0 != tab.id }
+      ids.forEach(onMove)
+      if !ids.isEmpty { Haptics.step() }
+      return !ids.isEmpty
+    } isTargeted: { targeted in
+      dropTargeted = targeted
+      if targeted { Haptics.snap() }
+    }
+    .motion(Motion.press, value: dropTargeted)
+    .draggable(FavoriteDrag.payload(url: tab.url, title: tab.title, tabID: tab.id)) {
       HStack(spacing: 8) {
         Favicon(url: tab.url)
         Text(tab.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
@@ -798,6 +875,7 @@ private struct PinRow: View {
   let onUnpin: () -> Void
   /// Another pin dropped on this one.
   let onMove: (UUID) -> Void
+  let isKeyboardSelected: Bool
   @State private var hovering = false
   @State private var dropTargeted = false
   @Environment(\.spaceInk) private var ink
@@ -836,12 +914,13 @@ private struct PinRow: View {
             .shadow(color: .black.opacity(0.14), radius: 1.5, y: 1)
             .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
             .matchedGeometryEffect(id: "active-card", in: selection)
-        } else if hovering || dropTargeted {
+        } else if hovering || dropTargeted || isKeyboardSelected {
           RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(.white.opacity(dropTargeted ? 0.22 : 0.13))
             .transition(.opacity)
         }
       }
+      .keyboardRing(isKeyboardSelected)
       .contentShape(Rectangle())
     }
     .buttonStyle(PressStyle())
@@ -871,8 +950,12 @@ private struct PinRow: View {
     .dropDestination(for: String.self) { items, _ in
       let ids = items.compactMap(FavoriteDrag.favoriteID)
       ids.forEach(onMove)
+      if !ids.isEmpty { Haptics.step() }
       return !ids.isEmpty
-    } isTargeted: { dropTargeted = $0 }
+    } isTargeted: { targeted in
+      dropTargeted = targeted
+      if targeted { Haptics.snap() }
+    }
     .onHover { hovering = $0 }
     .motion(.easeOut(duration: 0.14), value: hovering)
     .motion(Motion.press, value: dropTargeted)
@@ -934,6 +1017,17 @@ enum FavoriteDrag {
 
   static func payload(url: String, title: String) -> String { url + separator + title }
 
+  /// A tab row's payload also carries the tab's ID, for reordering tabs.
+  static func payload(url: String, title: String, tabID: Int) -> String {
+    url + separator + title + separator + "tab:\(tabID)"
+  }
+
+  static func tabID(_ text: String) -> Int? {
+    let parts = text.components(separatedBy: separator)
+    guard parts.count >= 3, parts[parts.count - 1].hasPrefix("tab:") else { return nil }
+    return Int(parts[parts.count - 1].dropFirst(4))
+  }
+
   /// A favorite dragged to a new place in the grid.
   static let favoritePrefix = "sidebar-favorite:"
 
@@ -948,7 +1042,7 @@ enum FavoriteDrag {
     let parts = text.components(separatedBy: separator)
     let url = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
     guard URL(string: url)?.scheme?.hasPrefix("http") == true else { return nil }
-    return Favorite(url: url, title: parts.count > 1 ? parts[1] : url)
+    return Favorite(url: url, title: parts.count > 1 && !parts[1].hasPrefix("tab:") ? parts[1] : url)
   }
 }
 
@@ -1026,15 +1120,19 @@ private struct LinkRow: View {
 private struct BookmarkTree: View {
   let node: BookmarkNode
   let depth: Int
-  let open: (String) -> Void
-  @State private var expanded = false
+  let model: SidebarModel
   @State private var hovering = false
+
+  /// Open folders are kept per space, so they stay open after a reload.
+  private var expanded: Bool { model.openFolders.contains(node.id) }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     if node.isFolder {
       Button {
-        withAnimation(Motion.animation(Motion.list, reduceMotion: reduceMotion)) { expanded.toggle() }
+        withAnimation(Motion.animation(Motion.list, reduceMotion: reduceMotion)) {
+          model.setFolder(node.id, open: !expanded)
+        }
       } label: {
         HStack(spacing: 6) {
           Image(systemName: "chevron.right")
@@ -1058,12 +1156,12 @@ private struct BookmarkTree: View {
 
       if expanded {
         ForEach(Array(node.children.enumerated()), id: \.element.id) { index, child in
-          BookmarkTree(node: child, depth: depth + 1, open: open)
+          BookmarkTree(node: child, depth: depth + 1, model: model)
             .cascadeIn(delay: Motion.stagger(index, step: 0.022), distance: 6)
         }
       }
     } else {
-      LinkRow(title: node.title, url: node.url ?? "") { open(node.url ?? "") }
+      LinkRow(title: node.title, url: node.url ?? "") { model.open(node.url ?? "") }
         .padding(.leading, CGFloat(depth) * 12 + (depth > 0 ? 14 : 0))
     }
   }
@@ -1263,6 +1361,17 @@ private struct ProblemBanner: View {
 }
 
 private extension View {
+  /// A ring around the row that the keyboard has selected.
+  func keyboardRing(_ shown: Bool) -> some View {
+    overlay {
+      if shown {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .strokeBorder(.white.opacity(0.85), lineWidth: 1.5)
+          .transition(.opacity)
+      }
+    }
+  }
+
   /// A plain row: 32 pt high, with a soft fill under the pointer.
   func rowBackground(hovering: Bool, leading: CGFloat = 10) -> some View {
     padding(.leading, leading)

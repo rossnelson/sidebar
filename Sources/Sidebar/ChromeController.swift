@@ -71,6 +71,10 @@ final class ChromeController {
     try run(ChromeScripts.setURL(tabID: tabID, url: url))
   }
 
+  func moveTab(id: Int, to targetID: Int) throws(ChromeError) {
+    try run(ChromeScripts.moveTab(id: id, to: targetID))
+  }
+
   func openInNewTab(_ url: String) throws(ChromeError) {
     try run(ChromeScripts.openInNewTab(url))
   }

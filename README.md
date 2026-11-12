@@ -14,6 +14,8 @@ Chrome window, with:
 - **Clear**, which closes every tab except the active tab, pinned tabs and the tabs of favorites
 - auto-archive: tabs that you have not used for 12 hours close, and the ⌘T palette finds them again
 - commands in the ⌘T palette: type `>`
+- keyboard control of the sidebar: ⌃⌘↓
+- drag to reorder tabs (Chrome's tab strip follows)
 - a ⌘T palette that searches tabs, bookmarks and history, or opens a URL or a web search
 - back, forward and reload buttons, and an address pill that opens the palette
 
@@ -176,7 +178,9 @@ and press the new keys. A shortcut must include ⌘, ⌃ or ⌥. Press Esc to ca
 
 Each Chrome profile has its own favorites grid, with up to 12 favorites. To add a
 favorite, drag a tab onto the grid, or use the tab's context menu. To reorder the
-favorites, drag a favorite onto another one. Click a favorite to switch to its
+favorites, drag a favorite onto another one. To reorder tabs, drag a tab onto
+another tab; the order changes in Chrome too. Open bookmark folders stay open for
+each space. Click a favorite to switch to its
 open tab, or to open it when no tab matches.
 
 Sidebar saves favorites in
@@ -187,7 +191,8 @@ Sidebar saves favorites in
 Each Chrome profile is a space, with its own colors and favorites. When Chrome
 has more than one profile, letter icons at the bottom of the sidebar show each
 space. Click an icon, or swipe left or right with two fingers on the sidebar, to
-bring that profile's window to the front. When that profile has
+bring that profile's window to the front. Right-click an icon to choose a symbol
+or an emoji for that space. When that profile has
 no open window, Sidebar asks Chrome to open one with
 `open -nb com.google.Chrome --args --profile-directory=<folder>`, the same
 request that Chrome's own profile menu makes. The running Chrome opens the
@@ -214,6 +219,23 @@ counts the time from when it started, so it never closes a tab in its first
 Sidebar keeps the last 200 closed tabs for each space in
 `~/Library/Application Support/Sidebar/archive-<profile folder>.json`. Search for
 one in the ⌘T palette (it shows **Archived**) to open it again.
+
+## Keyboard
+
+Press ⌃⌘↓ while Chrome is in front. The sidebar takes the keyboard and selects the
+active tab (while collapsed, the sidebar slides out first).
+
+- ↑ and ↓ (or ⌃P and ⌃N, or K and J) move the selection.
+- Return opens the selected tab and gives the keyboard back to Chrome.
+- Delete closes the selected tab.
+- Esc gives the keyboard back to Chrome.
+
+## Palette search
+
+The ⌘T palette also finds your favorites, pinned tabs and other spaces. Type
+"temp" to switch to a space named Temporal. Before you type, the palette shows
+your open tabs, then the tabs that you closed a short time ago. Sidebar sees a
+tab close while it reads Chrome's tabs, and keeps the last 30 until it quits.
 
 ## Palette commands
 

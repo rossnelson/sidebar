@@ -626,3 +626,47 @@ private typealias M = KeyRouting.Modifiers
     #expect(results.contains { $0.kind == .archived })
   }
 }
+
+@Suite struct RecentlyClosed {
+  let a = ChromeTab(id: 1, title: "A", url: "https://a.com")
+  let b = ChromeTab(id: 2, title: "B", url: "https://b.com")
+  let c = ChromeTab(id: 3, title: "C", url: "https://c.com")
+
+  @Test func `a tab that left the same window is closed`() {
+    #expect(ClosedTabs.detect(previous: [a, b, c], next: [a, c]) == [b])
+  }
+
+  @Test func `a different front window closes nothing`() {
+    #expect(ClosedTabs.detect(previous: [a, b], next: [c]).isEmpty)
+  }
+
+  @Test func `closed tabs come after open tabs before typing, and match a search`() {
+    let tabs = [WindowTab(windowID: 1, tab: a)]
+    let empty = PaletteSearch.results(query: "", tabs: tabs, bookmarks: [], history: [], closed: [b])
+    #expect(empty.map(\.kind) == [.tab(windowID: 1, tabID: 1), .closed])
+    let found = PaletteSearch.results(query: "b.com", tabs: tabs, bookmarks: [], history: [], closed: [b])
+    #expect(found.contains { $0.kind == .closed })
+  }
+}
+
+@Suite struct TabOrder {
+  @Test func `moves like Chrome's move command`() {
+    let tabs = (1...4).map { ChromeTab(id: $0, title: "", url: "") }
+    #expect(ClosedTabs.moving(1, to: 3, in: tabs).map(\.id) == [2, 3, 1, 4])
+    #expect(ClosedTabs.moving(4, to: 2, in: tabs).map(\.id) == [1, 4, 2, 3])
+  }
+
+  @Test func `the move script finds both tabs by ID`() {
+    let script = ChromeScripts.moveTab(id: 7, to: 9)
+    #expect(script.contains(#"is "7" then set fromIndex"#) && script.contains(#"is "9" then set toIndex"#))
+  }
+}
+
+@Suite struct PaletteShortcuts {
+  @Test func `a favorite or space ranks above the open tab`() {
+    let tabs = [WindowTab(windowID: 1, tab: ChromeTab(id: 1, title: "Temporal Cloud", url: "https://cloud.temporal.io"))]
+    let space = PaletteResult(id: "space-T", kind: .shortcut("space:Profile 2"), title: "Temporal", url: "space:Profile 2", badge: "Space")
+    let results = PaletteSearch.results(query: "temp", tabs: tabs, bookmarks: [], history: [], shortcuts: [space])
+    #expect(results.first { $0.kind != .search }?.kind == .shortcut("space:Profile 2"))
+  }
+}

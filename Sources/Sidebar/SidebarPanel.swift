@@ -29,7 +29,9 @@ final class SidebarPanel: NSPanel {
     contentView = host
   }
 
-  override var canBecomeKey: Bool { false }
+  /// True only while the sidebar has keyboard focus (⌃⌘↓).
+  var acceptsKeys = false
+  override var canBecomeKey: Bool { acceptsKeys }
   override var canBecomeMain: Bool { false }
 }
 
@@ -56,7 +58,8 @@ final class PeekPanel: NSPanel {
     contentView = host
   }
 
-  override var canBecomeKey: Bool { false }
+  var acceptsKeys = false
+  override var canBecomeKey: Bool { acceptsKeys }
   override var canBecomeMain: Bool { false }
 }
 

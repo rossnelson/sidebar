@@ -35,6 +35,10 @@ public struct PaletteResult: Identifiable, Sendable, Equatable {
     case archived
     /// An action, typed after `>`.
     case command(String)
+    /// A favorite, pinned tab or space, by Sidebar's own ID for it.
+    case shortcut(String)
+    /// A tab closed a short time ago.
+    case closed
   }
 
   public let id: String
@@ -42,15 +46,18 @@ public struct PaletteResult: Identifiable, Sendable, Equatable {
   public let title: String
   /// The page URL, or for `.search` the search URL.
   public let url: String
-  /// An SF Symbol, for a command.
+  /// An SF Symbol, for a command or a space.
   public let symbol: String?
+  /// The badge text, for a shortcut ("Favorite", "Pinned", "Space").
+  public let badge: String?
 
-  public init(id: String, kind: Kind, title: String, url: String, symbol: String? = nil) {
+  public init(id: String, kind: Kind, title: String, url: String, symbol: String? = nil, badge: String? = nil) {
     self.id = id
     self.kind = kind
     self.title = title
     self.url = url
     self.symbol = symbol
+    self.badge = badge
   }
 }
 
@@ -151,6 +158,8 @@ public enum PaletteSearch {
     history: [HistoryItem],
     archived: [ArchivedTab] = [],
     commands: [PaletteCommand] = [],
+    shortcuts: [PaletteResult] = [],
+    closed: [ChromeTab] = [],
     limit: Int = 12
   ) -> [PaletteResult] {
     let text = query.trimmingCharacters(in: .whitespaces)
@@ -182,23 +191,28 @@ public enum PaletteSearch {
     let historyResults = history.map {
       PaletteResult(id: "history-\($0.id)", kind: .history, title: $0.title, url: $0.url)
     }
+    let closedResults = closed.enumerated().map { index, tab in
+      PaletteResult(id: "closed-\(index)-\(tab.id)", kind: .closed, title: tab.title.isEmpty ? tab.url : tab.title, url: tab.url)
+    }
     let archivedResults = archived.map {
       PaletteResult(id: "archived-\($0.id)", kind: .archived, title: $0.title, url: $0.url)
     }
 
+    // Before typing: open tabs, then the last few closed tabs, then history.
     guard !text.isEmpty else {
-      return Array(dedupe(tabResults + historyResults).prefix(limit))
+      return Array(dedupe(tabResults + closedResults.prefix(5) + historyResults).prefix(limit))
     }
 
     let boost: (PaletteResult.Kind) -> Int = {
       switch $0 {
+      case .shortcut: 200
       case .tab: 150
-      case .bookmark: 100
+      case .bookmark, .closed: 100
       default: 0
       }
     }
     var scored: [(result: PaletteResult, score: Int, order: Int)] = []
-    for (order, result) in (tabResults + bookmarkResults + archivedResults + historyResults).enumerated() {
+    for (order, result) in (shortcuts + tabResults + bookmarkResults + closedResults + archivedResults + historyResults).enumerated() {
       if let score = bestScore(text, title: result.title, url: result.url) {
         scored.append((result, score + boost(result.kind), order))
       }

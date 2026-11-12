@@ -26,6 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var copyURL: HotKey?
   private var peekHideTimer: Timer?
   private var swipeMonitor: Any?
+  /// ⌃⌘↓: the sidebar takes the keyboard. Registered only while Chrome is frontmost.
+  private var focusSidebar: HotKey?
+  private var keyboardMonitor: Any?
+  /// The panel that has keyboard focus, while the sidebar has it.
+  private var keyPanel: NSPanel?
   /// Horizontal and vertical travel of the current trackpad gesture.
   private var swipe = CGSize.zero
   /// Counts peek shows and hides, so an old slide-out does not hide a new peek.
@@ -61,6 +66,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       palette.commandT(over: windowFrame)
     }
     registerCopyURL()
+    focusSidebar = HotKey(keyCode: kVK_DownArrow, modifiers: controlKey | cmdKey, enabled: false) { [weak self] in
+      self?.beginKeyboardFocus()
+    }
+    model.endKeyboardFocus = { [weak self] in self?.endKeyboardFocus(returnToChrome: true) }
     preferences.onChange = { [weak self] in self?.registerCopyURL() }
     NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -215,6 +224,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let chromeInFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ChromeScripts.bundleID
     commandT?.isEnabled = chromeInFront
     copyURL?.isEnabled = chromeInFront
+    focusSidebar?.isEnabled = chromeInFront
+    // Another app came to the front while the sidebar had the keyboard.
+    if keyPanel != nil, let front = NSWorkspace.shared.frontmostApplication,
+      front != NSRunningApplication.current, !chromeInFront
+    {
+      endKeyboardFocus(returnToChrome: false)
+    }
   }
 
   private func registerCopyURL() {
@@ -261,6 +277,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     frameRect = sidebar
   }
 
+  // MARK: - Keyboard focus
+
+  /// The sidebar takes the keyboard: ↑ and ↓ move, Return opens, Delete closes,
+  /// Esc gives the keyboard back to Chrome. While collapsed, the peek opens.
+  private func beginKeyboardFocus() {
+    guard keyPanel == nil, chromeWindow != nil else { return }
+    if model.isCollapsed { setPeeking(true) }
+    let target: NSPanel = model.isCollapsed ? peekPanel : panel
+    guard target.isVisible else { return }
+    model.refreshTabs()
+    model.beginKeyboardSelection()
+    if let panel = target as? SidebarPanel { panel.acceptsKeys = true }
+    if let peek = target as? PeekPanel { peek.acceptsKeys = true }
+    keyPanel = target
+    NSApp.activate()
+    target.makeKey()
+    keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      guard let self, keyPanel != nil else { return event }
+      return handleSidebarKey(event) ? nil : event
+    }
+  }
+
+  private func handleSidebarKey(_ event: NSEvent) -> Bool {
+    let control = event.modifierFlags.contains(.control)
+    switch (Int(event.keyCode), control) {
+    case (kVK_DownArrow, _), (kVK_ANSI_N, true), (kVK_ANSI_J, false): model.moveKeyboardSelection(1)
+    case (kVK_UpArrow, _), (kVK_ANSI_P, true), (kVK_ANSI_K, false): model.moveKeyboardSelection(-1)
+    case (kVK_Return, _), (kVK_ANSI_KeypadEnter, _): model.openKeyboardSelection()
+    case (kVK_Delete, _), (kVK_ForwardDelete, _): model.closeKeyboardSelection()
+    case (kVK_Escape, _), (kVK_Tab, _): endKeyboardFocus(returnToChrome: true)
+    default: return false
+    }
+    return true
+  }
+
+  private func endKeyboardFocus(returnToChrome: Bool) {
+    guard let target = keyPanel else { return }
+    keyPanel = nil
+    if let keyboardMonitor { NSEvent.removeMonitor(keyboardMonitor) }
+    keyboardMonitor = nil
+    model.keyboardSelection = nil
+    (target as? SidebarPanel)?.acceptsKeys = false
+    (target as? PeekPanel)?.acceptsKeys = false
+    if target === peekPanel { hidePeek() }
+    if returnToChrome { model.chrome.focus() }
+  }
+
   // MARK: - Spaces
 
   /// Brings the space's Chrome window to the front. With no window open for
@@ -298,7 +361,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       defer { swipe = .zero }
       guard abs(swipe.width) >= 60, abs(swipe.width) > abs(swipe.height) * 2 else { return }
       // Fingers moving left show the next space, as in Arc.
-      if let space = model.neighborSpace(swipe.width < 0 ? 1 : -1) { switchSpace(to: space) }
+      if let space = model.neighborSpace(swipe.width < 0 ? 1 : -1) {
+        Haptics.step()
+        switchSpace(to: space)
+      }
     default:
       break
     }
@@ -347,6 +413,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     peekHideTimer?.invalidate()
     peekHideTimer = nil
     guard peeking else {
+      // The peek stays while it has the keyboard.
+      if keyPanel === peekPanel { return }
       // A short delay, so moving between the border and the peek does not close it.
       let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
         MainActor.assumeIsolated { self?.hidePeek() }

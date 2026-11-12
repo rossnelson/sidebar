@@ -20,6 +20,17 @@ final class SidebarModel {
   var pins: [Favorite] = []
   /// Tabs that Sidebar closed, newest first, for the palette.
   var archived: [ArchivedTab] = []
+  /// Tabs that closed a short time ago, newest first. Sidebar sees them leave
+  /// while it reads Chrome's tabs.
+  var recentlyClosed: [ChromeTab] = []
+  /// Bookmark folders that are open, in the current space. Kept between launches.
+  var openFolders: Set<String> = []
+  /// A chosen icon for each space: `sf:<symbol>` or `emoji:<character>`.
+  var spaceIcons: [String: String] = UserDefaults.standard.dictionary(forKey: "spaceIcons") as? [String: String] ?? [:] {
+    didSet { UserDefaults.standard.set(spaceIcons, forKey: "spaceIcons") }
+  }
+  /// The row that the keyboard has selected, while the sidebar has keyboard focus.
+  var keyboardSelection: String?
   /// `1` when the last space change went to a later space, `-1` to an earlier one.
   var spaceStep = 1
   /// Every Chrome profile, for the space switcher.
@@ -49,6 +60,10 @@ final class SidebarModel {
   @ObservationIgnored var showPreview: (ChromeTab?, CGRect) -> Void = { _, _ in }
   /// The preview card is on screen, so the next row shows its card at once.
   @ObservationIgnored var isPreviewing = false
+  /// Gives the keyboard back to Chrome. Set by the app delegate.
+  @ObservationIgnored var endKeyboardFocus: () -> Void = {}
+  /// Tab IDs that Sidebar closed itself, so they do not count as recently closed.
+  @ObservationIgnored private var closedBySidebar: Set<Int> = []
   /// Copies the active tab's URL. Set by the app delegate.
   @ObservationIgnored var copyURL: () -> Void = {}
   /// Each pin's open tab, kept while that tab navigates away from the pin.
@@ -90,6 +105,7 @@ final class SidebarModel {
   func refreshTabs() {
     do {
       let next = try chrome.frontWindowTabs()
+      noteClosedTabs(next)
       pinTabIDs = PinMatching.match(pins: pins, tabs: next.tabs, remembered: pinTabIDs)
       noteActivity(next)
       if next != snapshot { snapshot = next }
@@ -125,6 +141,7 @@ final class SidebarModel {
     guard next != profileDirectory else { return }
     profileDirectory = next
     loadFavorites()
+    loadOpenFolders()
     pinTabIDs = [:]
     bookmarksModified = nil
     themeModified = nil
@@ -246,6 +263,130 @@ final class SidebarModel {
     return spaces.indices.contains(next) ? spaces[next] : nil
   }
 
+  // MARK: - Folders
+
+  private var openFoldersKey: String { "openFolders-\(profileDirectory.lastPathComponent)" }
+
+  func loadOpenFolders() {
+    openFolders = Set(UserDefaults.standard.stringArray(forKey: openFoldersKey) ?? [])
+  }
+
+  func setFolder(_ id: String, open: Bool) {
+    if open { openFolders.insert(id) } else { openFolders.remove(id) }
+    UserDefaults.standard.set(Array(openFolders), forKey: openFoldersKey)
+  }
+
+  // MARK: - Recently closed
+
+  private func noteClosedTabs(_ next: TabSnapshot) {
+    let closed = ClosedTabs.detect(previous: snapshot.tabs, next: next.tabs)
+      .filter { !closedBySidebar.contains($0.id) }
+    closedBySidebar.subtract(snapshot.tabs.map(\.id))
+    guard !closed.isEmpty else { return }
+    var seen: Set<String> = []
+    recentlyClosed = Array((closed.reversed() + recentlyClosed).filter { seen.insert($0.url).inserted }.prefix(30))
+  }
+
+  /// Opens a recently closed tab again.
+  func reopen(url: String) {
+    recentlyClosed.removeAll { $0.url == url }
+    open(url)
+  }
+
+  // MARK: - Tab order
+
+  /// Moves a tab to another tab's place, in the sidebar at once and then in Chrome.
+  func moveTab(_ id: Int, to targetID: Int) {
+    let moved = ClosedTabs.moving(id, to: targetID, in: snapshot.tabs)
+    guard moved != snapshot.tabs else { return }
+    let activeID = snapshot.activeTabID
+    snapshot.tabs = moved
+    snapshot.activeIndex = (moved.firstIndex { $0.id == activeID } ?? -1) + 1
+    perform { (chrome) throws(ChromeError) in try chrome.moveTab(id: id, to: targetID) }
+  }
+
+  // MARK: - Keyboard
+
+  /// The rows the keyboard moves through: pinned tabs, then the other tabs.
+  var keyboardRows: [String] {
+    pins.map { "pin:\($0.id)" } + unpinnedTabs.map { "tab:\($0.id)" }
+  }
+
+  /// Starts on the active row.
+  func beginKeyboardSelection() {
+    let rows = keyboardRows
+    let activeRow = snapshot.activeTabID.map { id in
+      pinnedTabIDs.first { $0.value == id }.map { "pin:\($0.key)" } ?? "tab:\(id)"
+    }
+    keyboardSelection = activeRow.flatMap { rows.contains($0) ? $0 : nil } ?? rows.first
+  }
+
+  func moveKeyboardSelection(_ step: Int) {
+    let rows = keyboardRows
+    guard !rows.isEmpty else { return }
+    let index = keyboardSelection.flatMap(rows.firstIndex(of:)) ?? 0
+    keyboardSelection = rows[min(max(index + step, 0), rows.count - 1)]
+  }
+
+  /// Return: opens the selected row and gives the keyboard back to Chrome.
+  func openKeyboardSelection() {
+    guard let row = keyboardSelection else { return }
+    if let pin = pin(forRow: row) { openPin(pin) } else if let tab = tab(forRow: row) { activate(tab) }
+    endKeyboardFocus()
+  }
+
+  /// Delete: closes the selected row's tab and selects the next row.
+  func closeKeyboardSelection() {
+    guard let row = keyboardSelection else { return }
+    let rows = keyboardRows
+    let index = rows.firstIndex(of: row) ?? 0
+    if let pin = pin(forRow: row) {
+      closePinnedTab(pin)
+      return
+    }
+    guard let tab = tab(forRow: row) else { return }
+    close(tab)
+    let remaining = keyboardRows
+    keyboardSelection = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)]
+  }
+
+  private func pin(forRow row: String) -> Favorite? {
+    guard row.hasPrefix("pin:") else { return nil }
+    return pins.first { "pin:\($0.id)" == row }
+  }
+
+  private func tab(forRow row: String) -> ChromeTab? {
+    guard row.hasPrefix("tab:") else { return nil }
+    return snapshot.tabs.first { "tab:\($0.id)" == row }
+  }
+
+  // MARK: - Palette shortcuts
+
+  /// Favorites, pinned tabs and other spaces, for the palette's search.
+  var paletteShortcuts: [PaletteResult] {
+    favorites.map {
+      PaletteResult(id: "favorite-\($0.id)", kind: .shortcut("favorite:\($0.id)"), title: $0.title, url: $0.url, badge: "Favorite")
+    }
+      + pins.map {
+        PaletteResult(id: "pin-\($0.id)", kind: .shortcut("pin:\($0.id)"), title: $0.title, url: $0.url, badge: "Pinned")
+      }
+      + spaces.filter { $0.directory != spaceDirectory }.map {
+        PaletteResult(
+          id: "space-\($0.directory)", kind: .shortcut("space:\($0.directory)"), title: $0.name,
+          url: "space:\($0.directory)", symbol: "square.stack", badge: "Space")
+      }
+  }
+
+  private func openShortcut(_ id: String) {
+    if id.hasPrefix("favorite:"), let favorite = favorites.first(where: { "favorite:\($0.id)" == id }) {
+      openFavorite(favorite)
+    } else if id.hasPrefix("pin:"), let pin = pins.first(where: { "pin:\($0.id)" == id }) {
+      openPin(pin)
+    } else if id.hasPrefix("space:"), let space = spaces.first(where: { "space:\($0.directory)" == id }) {
+      switchSpace(space)
+    }
+  }
+
   // MARK: - Pins
 
   /// Each pin's open tab ID, from the last tab refresh.
@@ -334,6 +475,7 @@ final class SidebarModel {
     let now = Date()
     let closing = snapshot.tabs.filter { ids.contains($0.id) }
       .map { ArchivedTab(url: $0.url, title: $0.title.isEmpty ? $0.url : $0.title, closedAt: now) }
+    closedBySidebar.formUnion(ids)
     perform { (chrome) throws(ChromeError) in try chrome.closeTabs(ids: ids) }
     refreshTabs()
     archived = ArchiveStore.adding(closing, to: archived)
@@ -468,6 +610,10 @@ final class SidebarModel {
       restore(url: result.url)
     case let .command(id):
       run(command: id)
+    case let .shortcut(id):
+      openShortcut(id)
+    case .closed:
+      reopen(url: result.url)
     }
   }
 

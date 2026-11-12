@@ -15,13 +15,16 @@ final class PaletteState {
   var bookmarks: [BookmarkNode] = []
   var archived: [ArchivedTab] = []
   var commands: [PaletteCommand] = []
+  var shortcuts: [PaletteResult] = []
+  var closed: [ChromeTab] = []
   var theme = ProfileTheme.standard
 
   var isCommandMode: Bool { query.trimmingCharacters(in: .whitespaces).hasPrefix(">") }
 
   var results: [PaletteResult] {
     PaletteSearch.results(
-      query: query, tabs: tabs, bookmarks: bookmarks, history: history, archived: archived, commands: commands)
+      query: query, tabs: tabs, bookmarks: bookmarks, history: history, archived: archived, commands: commands,
+      shortcuts: shortcuts, closed: closed)
   }
 
   func move(_ delta: Int) {
@@ -64,6 +67,8 @@ final class PaletteController: NSObject, NSWindowDelegate {
     state.bookmarks = model.bookmarks
     state.archived = model.archived
     state.commands = model.commands
+    state.shortcuts = model.paletteShortcuts
+    state.closed = model.recentlyClosed
     state.theme = model.theme
     state.query = ""
     state.selection = 0
@@ -254,6 +259,7 @@ struct PaletteView: View {
     let rows = results.reduce(CGFloat(0)) { total, result in
       switch result.kind {
       case .search, .url, .command: total + 35
+      case .shortcut where result.symbol != nil: total + 35
       default: total + 51
       }
     }
@@ -401,6 +407,7 @@ private struct PaletteRow: View {
   private var showsURL: Bool {
     switch result.kind {
     case .search, .url, .command: false
+    case .shortcut: result.symbol == nil
     default: true
     }
   }
@@ -409,6 +416,10 @@ private struct PaletteRow: View {
     switch result.kind {
     case .search: Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
     case .url: Image(systemName: "arrow.up.right").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+    case .shortcut where result.symbol != nil:
+      Image(systemName: result.symbol ?? "square.stack")
+        .font(.system(size: 14, weight: .medium))
+        .foregroundStyle(.secondary)
     case .command:
       Image(systemName: result.symbol ?? "command")
         .font(.system(size: 14, weight: .medium))
@@ -427,6 +438,8 @@ private struct PaletteRow: View {
     case .search: "Google"
     case .archived: "Archived"
     case .command: "Command"
+    case .shortcut: result.badge ?? "Open"
+    case .closed: "Closed"
     }
   }
 }

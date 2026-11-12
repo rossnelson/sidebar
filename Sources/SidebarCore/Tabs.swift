@@ -191,6 +191,29 @@ public enum ChromeScripts {
     """
   }
 
+  /// Moves a tab of the front window to the place of another tab: after it
+  /// when moving right, before it when moving left.
+  public static func moveTab(id: Int, to targetID: Int) -> String {
+    """
+    tell application id "\(bundleID)"
+      set w to front window
+      set ids to id of tabs of w
+      set fromIndex to 0
+      set toIndex to 0
+      repeat with i from 1 to count of ids
+        if ((item i of ids) as text) is "\(id)" then set fromIndex to i
+        if ((item i of ids) as text) is "\(targetID)" then set toIndex to i
+      end repeat
+      if fromIndex is 0 or toIndex is 0 or fromIndex is toIndex then return
+      if fromIndex < toIndex then
+        move tab fromIndex of w to after tab toIndex of w
+      else
+        move tab fromIndex of w to before tab toIndex of w
+      end if
+    end tell
+    """
+  }
+
   public enum Navigation: String, Sendable { case back = "go back", forward = "go forward", reload }
 
   public static func navigate(_ navigation: Navigation) -> String {
@@ -222,5 +245,26 @@ public enum ChromeScripts {
       .replacingOccurrences(of: "\"", with: "\\\"")
       .replacingOccurrences(of: "\n", with: "")
       .replacingOccurrences(of: "\r", with: "")
+  }
+}
+
+/// Tabs that left the front window between two reads.
+public enum ClosedTabs {
+  /// The tabs in `previous` that `next` lacks. Nothing when the two share no
+  /// tab: then the front window changed, and no tab closed.
+  public static func detect(previous: [ChromeTab], next: [ChromeTab]) -> [ChromeTab] {
+    let nextIDs = Set(next.map(\.id))
+    guard previous.contains(where: { nextIDs.contains($0.id) }) else { return [] }
+    return previous.filter { !nextIDs.contains($0.id) && !$0.url.hasPrefix("chrome://") && !$0.url.isEmpty }
+  }
+
+  /// Moves a tab in a list the way `ChromeScripts.moveTab` moves it in Chrome.
+  public static func moving(_ id: Int, to targetID: Int, in tabs: [ChromeTab]) -> [ChromeTab] {
+    guard id != targetID, let from = tabs.firstIndex(where: { $0.id == id }),
+      let to = tabs.firstIndex(where: { $0.id == targetID })
+    else { return tabs }
+    var next = tabs
+    next.insert(next.remove(at: from), at: to)
+    return next
   }
 }
