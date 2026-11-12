@@ -670,3 +670,28 @@ private typealias M = KeyRouting.Modifiers
     #expect(results.first { $0.kind != .search }?.kind == .shortcut("space:Profile 2"))
   }
 }
+
+@Suite struct PinNames {
+  let pin = Favorite(url: "https://docs.example.com/a", title: "Saved Title")
+
+  @Test func labelPrefersNameThenTabTitleThenSavedTitle() {
+    let tab = ChromeTab(id: 1, title: "Live Title", url: "https://docs.example.com/b")
+    #expect(pin.label(for: nil) == "Saved Title")
+    #expect(pin.label(for: tab) == "Live Title")
+    #expect(pin.label(for: ChromeTab(id: 2, title: "", url: "https://x.test/")) == "https://x.test/")
+    #expect(pin.renamed("Docs").label(for: tab) == "Docs")
+  }
+
+  @Test func renameTrimsAndEmptyNameClearsIt() {
+    #expect(pin.renamed("  Docs \n").name == "Docs")
+    #expect(pin.renamed("Docs").renamed("   ").name == nil)
+  }
+
+  @Test func oldPinFilesWithoutNameStillDecode() throws {
+    let json = #"[{"id":"\#(pin.id)","url":"https://a.test/","title":"A"}]"#
+    let pins = try JSONDecoder().decode([Favorite].self, from: Data(json.utf8))
+    #expect(pins.first?.name == nil)
+    let named = try JSONDecoder().decode(Favorite.self, from: JSONEncoder().encode(pin.renamed("Docs")))
+    #expect(named.name == "Docs")
+  }
+}

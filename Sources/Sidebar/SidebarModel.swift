@@ -71,6 +71,13 @@ final class SidebarModel {
   /// When each tab was last the active tab, for auto-archive.
   @ObservationIgnored private var lastActive: [Int: Date] = [:]
 
+  /// The pin whose name the person is editing.
+  var renamingPinID: UUID?
+  /// Lets the sidebar take typed text, for a rename. Set by the app delegate.
+  @ObservationIgnored var beginTextInput: () -> Void = {}
+  /// Gives the keyboard back to Chrome after a rename. Set by the app delegate.
+  @ObservationIgnored var endTextInput: () -> Void = {}
+
   /// Opens the Settings window. Set by the app delegate.
   @ObservationIgnored var openSettings: () -> Void = {}
   /// Shows a short message over Chrome. Set by the app delegate.
@@ -368,7 +375,7 @@ final class SidebarModel {
       PaletteResult(id: "favorite-\($0.id)", kind: .shortcut("favorite:\($0.id)"), title: $0.title, url: $0.url, badge: "Favorite")
     }
       + pins.map {
-        PaletteResult(id: "pin-\($0.id)", kind: .shortcut("pin:\($0.id)"), title: $0.title, url: $0.url, badge: "Pinned")
+        PaletteResult(id: "pin-\($0.id)", kind: .shortcut("pin:\($0.id)"), title: $0.name ?? $0.title, url: $0.url, badge: "Pinned")
       }
       + spaces.filter { $0.directory != spaceDirectory }.map {
         PaletteResult(
@@ -423,6 +430,26 @@ final class SidebarModel {
     }
     open(pin.url)
     if let id = snapshot.activeTabID { pinTabIDs[pin.id] = id }
+  }
+
+  /// Shows a text field in the pin's row.
+  func beginRename(_ pin: Favorite) {
+    if keyboardSelection != nil { endKeyboardFocus() }
+    renamingPinID = pin.id
+    beginTextInput()
+  }
+
+  /// Saves the pin's new name. An empty name shows the page title again.
+  /// `nil` cancels a rename.
+  func finishRename(_ pin: Favorite, name: String?) {
+    if renamingPinID == pin.id {
+      renamingPinID = nil
+      endTextInput()
+    }
+    guard let name, let index = pins.firstIndex(where: { $0.id == pin.id }) else { return }
+    var next = pins
+    next[index] = next[index].renamed(name)
+    savePins(next)
   }
 
   /// Takes the pin's tab back to the pin's own URL.

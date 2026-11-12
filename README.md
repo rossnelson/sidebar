@@ -205,6 +205,10 @@ tabs show above your other tabs and stay when you close their tab: click a dimme
 pin to open it again. When a pinned tab goes to another page, a ↩ button takes it
 back to the pinned page. Drag a pin onto another pin to reorder them.
 
+To rename a pin, double-click it or right-click it and choose **Rename…**. Press
+Return to save or Esc to cancel. Clear the name, or choose **Use Page Title**, to
+show the page title again.
+
 ## Clear and auto-archive
 
 Move the pointer over the space name above your tabs and click **Clear**. Sidebar

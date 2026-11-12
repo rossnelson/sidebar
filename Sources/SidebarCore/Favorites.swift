@@ -5,11 +5,31 @@ public struct Favorite: Codable, Identifiable, Sendable, Equatable {
   public var id: UUID
   public var url: String
   public var title: String
+  /// A name the person gave this pin. It replaces the page title.
+  public var name: String?
 
-  public init(id: UUID = UUID(), url: String, title: String) {
+  public init(id: UUID = UUID(), url: String, title: String, name: String? = nil) {
     self.id = id
     self.url = url
     self.title = title
+    self.name = name
+  }
+
+  /// The text for this pin's row: its own name, else the open tab's title,
+  /// else the title saved when it was pinned.
+  public func label(for tab: ChromeTab?) -> String {
+    if let name { return name }
+    guard let tab else { return title }
+    return tab.title.isEmpty ? tab.url : tab.title
+  }
+
+  /// A copy with `newName`, trimmed. An empty name removes the name, so the
+  /// row shows the page title again.
+  public func renamed(_ newName: String) -> Favorite {
+    var copy = self
+    let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+    copy.name = trimmed.isEmpty ? nil : trimmed
+    return copy
   }
 
   var host: String? {

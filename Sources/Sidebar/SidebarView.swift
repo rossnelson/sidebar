@@ -191,7 +191,10 @@ private struct SpaceContent: View {
               onClose: { model.closePinnedTab(pin) },
               onUnpin: { model.unpin(pin) },
               onMove: { model.movePin($0, to: pin.id) },
-              isKeyboardSelected: model.keyboardSelection == "pin:\(pin.id)")
+              isKeyboardSelected: model.keyboardSelection == "pin:\(pin.id)",
+              isRenaming: model.renamingPinID == pin.id,
+              onBeginRename: { model.beginRename(pin) },
+              onRename: { model.finishRename(pin, name: $0) })
             .cascadeIn(delay: 0.1 + Motion.stagger(index))
             .transition(rowTransition)
           }
@@ -876,7 +879,15 @@ private struct PinRow: View {
   /// Another pin dropped on this one.
   let onMove: (UUID) -> Void
   let isKeyboardSelected: Bool
+  let isRenaming: Bool
+  let onBeginRename: () -> Void
+  /// The new name, or `nil` to cancel.
+  let onRename: (String?) -> Void
   @State private var hovering = false
+  @State private var draft = ""
+  /// Return or Esc ended the rename, so losing focus must not save again.
+  @State private var renameDone = false
+  @FocusState private var fieldFocused: Bool
   @State private var dropTargeted = false
   @Environment(\.spaceInk) private var ink
 
@@ -884,6 +895,51 @@ private struct PinRow: View {
   private var wandered: Bool { tab.map { $0.url != pin.url } ?? false }
 
   var body: some View {
+    if isRenaming { renameRow } else { row }
+  }
+
+  /// The row with a text field in place of the title.
+  private var renameRow: some View {
+    HStack(spacing: 10) {
+      Favicon(url: tab?.url ?? pin.url)
+        .frame(width: 18, height: 18)
+      TextField("Pin name", text: $draft, prompt: Text(pageTitle))
+        .textFieldStyle(.plain)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(.white)
+        .focused($fieldFocused)
+        .onSubmit { end(draft) }
+        .onExitCommand { end(nil) }
+    }
+    .padding(.horizontal, 10)
+    .frame(height: 32)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(.black.opacity(0.18))
+        .strokeBorder(.white.opacity(0.55), lineWidth: 1.5))
+    .onAppear {
+      draft = pin.name ?? pageTitle
+      renameDone = false
+      // The panel becomes key a moment after the field appears.
+      Task { fieldFocused = true }
+    }
+    // A click elsewhere ends the rename and keeps the text.
+    .onChange(of: fieldFocused) { was, now in
+      if was && !now { end(draft) }
+    }
+  }
+
+  private func end(_ name: String?) {
+    guard !renameDone else { return }
+    renameDone = true
+    onRename(name)
+  }
+
+  /// The title that the row shows without a name.
+  private var pageTitle: String { Favorite(url: pin.url, title: pin.title).label(for: tab) }
+
+  private var row: some View {
     Button(action: onOpen) {
       HStack(spacing: 10) {
         ZStack {
@@ -895,7 +951,7 @@ private struct PinRow: View {
         }
         .frame(width: 18, height: 18)
         .opacity(tab == nil ? 0.55 : 1)
-        Text(tab.map { $0.title.isEmpty ? $0.url : $0.title } ?? pin.title)
+        Text(pin.label(for: tab))
           .font(.system(size: 13, weight: isActive ? .semibold : .regular))
           .kerning(-0.1)
           .lineLimit(1)
@@ -924,6 +980,7 @@ private struct PinRow: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(PressStyle())
+    .simultaneousGesture(TapGesture(count: 2).onEnded(onBeginRename))
     .overlay(alignment: .trailing) {
       HStack(spacing: 4) {
         // The tab has wandered: a way back to the pinned page, like Arc.
@@ -962,6 +1019,8 @@ private struct PinRow: View {
     .help(pin.url)
     .contextMenu {
       if wandered { Button("Back to Pinned Page", action: onReset) }
+      Button("Rename…", action: onBeginRename)
+      if pin.name != nil { Button("Use Page Title") { onRename("") } }
       Button("Unpin", action: onUnpin)
       if tab != nil {
         Divider()

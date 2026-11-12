@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var keyboardMonitor: Any?
   /// The panel that has keyboard focus, while the sidebar has it.
   private var keyPanel: NSPanel?
+  /// The panel that has the keyboard for a text field, such as a pin rename.
+  private var textPanel: NSPanel?
   /// Horizontal and vertical travel of the current trackpad gesture.
   private var swipe = CGSize.zero
   /// Counts peek shows and hides, so an old slide-out does not hide a new peek.
@@ -72,6 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       self?.beginKeyboardFocus()
     }
     model.endKeyboardFocus = { [weak self] in self?.endKeyboardFocus(returnToChrome: true) }
+    model.beginTextInput = { [weak self] in self?.beginTextInput() }
+    model.endTextInput = { [weak self] in self?.endTextInput() }
     preferences.onChange = { [weak self] in self?.registerCopyURL() }
     NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -326,6 +330,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if returnToChrome { model.chrome.focus() }
   }
 
+  /// The sidebar takes the keyboard for a text field, until `endTextInput`.
+  private func beginTextInput() {
+    let target: NSPanel = model.isCollapsed ? peekPanel : panel
+    guard target.isVisible else { return }
+    (target as? SidebarPanel)?.acceptsKeys = true
+    (target as? PeekPanel)?.acceptsKeys = true
+    textPanel = target
+    NSApp.activate()
+    target.makeKey()
+  }
+
+  private func endTextInput() {
+    guard let target = textPanel else { return }
+    textPanel = nil
+    (target as? SidebarPanel)?.acceptsKeys = false
+    (target as? PeekPanel)?.acceptsKeys = false
+    if target === peekPanel { hidePeek() }
+    // Only take Chrome back to the front when the sidebar still has it.
+    if NSApp.isActive { model.chrome.focus() }
+  }
+
   // MARK: - Spaces
 
   /// Brings the space's Chrome window to the front. With no window open for
@@ -416,7 +441,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     peekHideTimer = nil
     guard peeking else {
       // The peek stays while it has the keyboard.
-      if keyPanel === peekPanel { return }
+      if keyPanel === peekPanel || textPanel === peekPanel { return }
       // A short delay, so moving between the border and the peek does not close it.
       let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
         MainActor.assumeIsolated { self?.hidePeek() }
