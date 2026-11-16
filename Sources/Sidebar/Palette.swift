@@ -114,9 +114,7 @@ final class PaletteController: NSObject, NSWindowDelegate {
     let keyCode = CGKeyCode(event.keyCode)
     let flags = event.cgEvent?.flags ?? []
     close()
-    guard let pid = NSRunningApplication
-      .runningApplications(withBundleIdentifier: ChromeScripts.bundleID).first?.processIdentifier
-    else { return }
+    guard let pid = ChromeProcess.current()?.processIdentifier else { return }
     Task {
       // Give Chrome a moment to take keyboard focus back from the palette.
       try? await Task.sleep(for: .milliseconds(80))

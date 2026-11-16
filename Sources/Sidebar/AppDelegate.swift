@@ -227,7 +227,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// Turns on the Chrome-only hotkeys while Chrome is frontmost, so other apps keep these keys.
   private func updateCommandT() {
-    let chromeInFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == ChromeScripts.bundleID
+    let front = NSWorkspace.shared.frontmostApplication
+    let chromeInFront = front != nil && front?.processIdentifier == ChromeProcess.current()?.processIdentifier
     commandT?.isEnabled = chromeInFront
     copyURL?.isEnabled = chromeInFront
     focusSidebar?.isEnabled = chromeInFront

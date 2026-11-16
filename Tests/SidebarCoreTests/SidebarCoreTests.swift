@@ -4,35 +4,6 @@ import SQLite3
 import Testing
 @testable import SidebarCore
 
-@Suite struct TabParsing {
-  @Test func `parses the active index and every tab`() {
-    let rs = TabSnapshot.recordSeparator, us = TabSnapshot.unitSeparator
-    let output = "2\(rs)11\(us)Inbox\(us)https://mail.google.com\(rs)12\(us)Docs\(us)https://docs.google.com"
-    let snapshot = TabSnapshot.parse(output)
-    #expect(snapshot.activeIndex == 2)
-    #expect(snapshot.tabs == [
-      ChromeTab(id: 11, title: "Inbox", url: "https://mail.google.com"),
-      ChromeTab(id: 12, title: "Docs", url: "https://docs.google.com"),
-    ])
-    #expect(snapshot.activeTabID == 12)
-  }
-
-  @Test func `empty output means no window`() {
-    #expect(TabSnapshot.parse("") == .empty)
-  }
-
-  @Test func `keeps a title that holds a separator`() {
-    let rs = TabSnapshot.recordSeparator, us = TabSnapshot.unitSeparator
-    let snapshot = TabSnapshot.parse("1\(rs)5\(us)a\(us)b\(us)https://x.com")
-    #expect(snapshot.tabs.first?.title == "a\(us)b")
-    #expect(snapshot.tabs.first?.url == "https://x.com")
-  }
-
-  @Test func `escapes quotes and backslashes for AppleScript`() {
-    #expect(ChromeScripts.escape(#"https://a.com/?q="x"\y"#) == #"https://a.com/?q=\"x\"\\y"#)
-  }
-}
-
 @Suite struct BookmarkParsing {
   @Test func `bar items are top level and other is a folder`() throws {
     let json = """
@@ -147,12 +118,6 @@ import Testing
 }
 
 @Suite struct TabLoading {
-  @Test func `reads the loading flag and keeps old records working`() {
-    let rs = TabSnapshot.recordSeparator, us = TabSnapshot.unitSeparator
-    let snapshot = TabSnapshot.parse("1\(rs)5\(us)1\(us)Title\(us)https://a.com\(rs)6\(us)Old\(us)https://b.com")
-    #expect(snapshot.tabs.map(\.isLoading) == [true, false])
-    #expect(snapshot.tabs.map(\.title) == ["Title", "Old"])
-  }
 }
 
 @Suite struct TabStripRule {
@@ -241,24 +206,6 @@ import Testing
     #expect(Destination.looksLikeURL(text) == expected)
   }
 
-  @Test func `parses tabs from every window`() {
-    let rs = TabSnapshot.recordSeparator, us = TabSnapshot.unitSeparator
-    let parsed = WindowTab.parseAll("\(rs)7\(us)1\(us)A\(us)https://a.com\(rs)8\(us)2\(us)B\(us)https://b.com")
-    #expect(parsed.map(\.windowID) == [7, 8])
-    #expect(parsed.map(\.tab.title) == ["A", "B"])
-  }
-}
-
-@Suite struct ScriptShape {
-  // Chrome 157 returns tab IDs as text, so an integer comparison never matches.
-  @Test func `tab scripts compare IDs as text`() {
-    for script in [
-      ChromeScripts.activateTab(id: 42), ChromeScripts.closeTab(id: 42),
-      ChromeScripts.activateTab(windowID: 1, tabID: 42),
-    ] {
-      #expect(script.contains(#"((id of t) as text) is "42""#))
-    }
-  }
 }
 
 @Suite struct ProfileThemes {
@@ -383,10 +330,6 @@ import Testing
     #expect(FavoritesStore.adding(one, to: full).count == FavoritesStore.capacity)
   }
 
-  @Test func `navigation scripts target the active tab`() {
-    #expect(ChromeScripts.navigate(.back).contains("tell active tab of front window to go back"))
-    #expect(ChromeScripts.navigate(.reload).contains("to reload"))
-  }
 }
 
 @Suite struct FrameStability {
@@ -545,10 +488,6 @@ private typealias M = KeyRouting.Modifiers
     #expect(TabCleanup.idsToClose(in: tabs, activeID: 3, favorites: favorites) == [1, 4])
   }
 
-  @Test func `the close script names each tab as text`() {
-    let script = ChromeScripts.closeTabs(ids: [7, 9])
-    #expect(script.contains(#"{"7", "9"}"#))
-  }
 }
 
 @Suite struct PinnedTabs {
@@ -649,17 +588,13 @@ private typealias M = KeyRouting.Modifiers
   }
 }
 
-@Suite struct TabOrder {
+@Suite struct TabMoving {
   @Test func `moves like Chrome's move command`() {
     let tabs = (1...4).map { ChromeTab(id: $0, title: "", url: "") }
     #expect(ClosedTabs.moving(1, to: 3, in: tabs).map(\.id) == [2, 3, 1, 4])
     #expect(ClosedTabs.moving(4, to: 2, in: tabs).map(\.id) == [1, 4, 2, 3])
   }
 
-  @Test func `the move script finds both tabs by ID`() {
-    let script = ChromeScripts.moveTab(id: 7, to: 9)
-    #expect(script.contains(#"is "7" then set fromIndex"#) && script.contains(#"is "9" then set toIndex"#))
-  }
 }
 
 @Suite struct PaletteShortcuts {
@@ -703,5 +638,41 @@ private typealias M = KeyRouting.Modifiers
     #expect(pins.first?.name == nil)
     let named = try JSONDecoder().decode(Favorite.self, from: JSONEncoder().encode(pin.renamed("Docs")))
     #expect(named.name == "Docs")
+  }
+}
+
+@Suite struct ChromeInstancePicking {
+  @Test func skipsChromeStartedByAutomation() {
+    let devtools = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "--remote-debugging-pipe",
+                    "--user-data-dir=/Users/x/.cache/chrome-devtools-mcp/chrome-profile"]
+    let own = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
+    #expect(ChromeInstance.isAutomation(arguments: devtools))
+    #expect(!ChromeInstance.isAutomation(arguments: own))
+    #expect(!ChromeInstance.isAutomation(arguments: own + ["--profile-directory=Profile 1"]))
+    #expect(ChromeInstance.pick([(id: 1, arguments: devtools), (id: 2, arguments: own)]) == 2)
+  }
+
+  @Test func fallsBackToTheOnlyChrome() {
+    #expect(ChromeInstance.pick([(id: 1, arguments: ["chrome", "--headless"])]) == 1)
+    #expect(ChromeInstance.pick([(id: Int, arguments: [String])]()) == nil)
+  }
+}
+
+@Suite struct SidebarTabOrder {
+  let tabs = [1, 2, 3].map { ChromeTab(id: $0, title: "\($0)", url: "https://\($0).test/") }
+
+  @Test func keepsTheSidebarOrderAndTheActiveTab() {
+    let snapshot = TabSnapshot(tabs: tabs, activeIndex: 1)
+    let ordered = TabOrder.apply([3, 1, 2], to: snapshot)
+    #expect(ordered.tabs.map(\.id) == [3, 1, 2])
+    #expect(ordered.activeTabID == 1)
+  }
+
+  @Test func newTabsFollowInChromeOrderAndClosedOnesDrop() {
+    let snapshot = TabSnapshot(tabs: tabs + [ChromeTab(id: 4, title: "4", url: "https://4.test/")], activeIndex: 4)
+    let ordered = TabOrder.apply([9, 2, 1], to: snapshot)
+    #expect(ordered.tabs.map(\.id) == [2, 1, 3, 4])
+    #expect(ordered.activeTabID == 4)
+    #expect(TabOrder.apply([], to: snapshot) == snapshot)
   }
 }

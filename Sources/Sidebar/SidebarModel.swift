@@ -111,7 +111,7 @@ final class SidebarModel {
 
   func refreshTabs() {
     do {
-      let next = try chrome.frontWindowTabs()
+      let next = TabOrder.apply(tabOrder, to: try chrome.frontWindowTabs())
       noteClosedTabs(next)
       pinTabIDs = PinMatching.match(pins: tabOwners, tabs: next.tabs, remembered: pinTabIDs)
       noteActivity(next)
@@ -312,13 +312,15 @@ final class SidebarModel {
   // MARK: - Tab order
 
   /// Moves a tab to another tab's place, in the sidebar at once and then in Chrome.
+  /// The sidebar's own order of tab IDs, set by a drag. See `TabOrder`.
+  @ObservationIgnored private var tabOrder: [Int] = []
+
+  /// Moves a tab in the sidebar's list. Chrome's tab strip keeps its order.
   func moveTab(_ id: Int, to targetID: Int) {
     let moved = ClosedTabs.moving(id, to: targetID, in: snapshot.tabs)
     guard moved != snapshot.tabs else { return }
-    let activeID = snapshot.activeTabID
-    snapshot.tabs = moved
-    snapshot.activeIndex = (moved.firstIndex { $0.id == activeID } ?? -1) + 1
-    perform { (chrome) throws(ChromeError) in try chrome.moveTab(id: id, to: targetID) }
+    tabOrder = moved.map(\.id)
+    snapshot = TabOrder.apply(tabOrder, to: snapshot)
   }
 
   // MARK: - Keyboard

@@ -119,7 +119,7 @@
     <text x="300" y="528">Read the window's position, size and title. Move and resize it.</text>
     <!-- 2 Apple Events -->
     <rect x="286" y="544" width="428" height="44" rx="8" fill="#FFFFFF" stroke="#D1D9E0"/>
-    <text x="300" y="563" font-size="13" font-weight="700" fill="#1F2328">Apple Events (Chrome's AppleScript)</text>
+    <text x="300" y="563" font-size="13" font-weight="700" fill="#1F2328">Apple Events (Chrome's scripting interface)</text>
     <text x="300" y="580">List, switch, open and close tabs. Back, forward, reload. Read the URL.</text>
     <!-- 3 Keystrokes -->
     <rect x="286" y="596" width="428" height="44" rx="8" fill="#FFFFFF" stroke="#D1D9E0"/>

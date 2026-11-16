@@ -10,17 +10,6 @@ public struct WindowTab: Sendable, Equatable {
     self.tab = tab
   }
 
-  /// Parses `ChromeScripts.allTabs`: records of `windowID US tabID US title US url`.
-  public static func parseAll(_ output: String) -> [WindowTab] {
-    output.components(separatedBy: TabSnapshot.recordSeparator).compactMap { record in
-      let fields = record.components(separatedBy: TabSnapshot.unitSeparator)
-      guard fields.count >= 4, let windowID = Int(fields[0]), let tabID = Int(fields[1]) else {
-        return nil
-      }
-      let title = fields[2..<(fields.count - 1)].joined(separator: TabSnapshot.unitSeparator)
-      return WindowTab(windowID: windowID, tab: ChromeTab(id: tabID, title: title, url: fields[fields.count - 1]))
-    }
-  }
 }
 
 /// One row in the Cmd+T palette.

@@ -15,7 +15,7 @@ Chrome window, with:
 - auto-archive: tabs that you have not used for 12 hours close, and the ⌘T palette finds them again
 - commands in the ⌘T palette: type `>`
 - keyboard control of the sidebar: ⌃⌘↓
-- drag to reorder tabs (Chrome's tab strip follows)
+- drag to reorder tabs in the sidebar
 - a ⌘T palette that searches tabs, bookmarks and history, or opens a URL or a web search
 - back, forward and reload buttons, and an address pill that opens the palette
 
@@ -44,7 +44,7 @@ System Settings → Privacy & Security.
 | Channel | What Sidebar does with it | Permission |
 | --- | --- | --- |
 | Accessibility | Reads the window's position, size and title. Moves and resizes the window. | Accessibility |
-| Apple Events (Chrome's AppleScript) | Lists, switches, opens and closes tabs. Back, forward, reload. Reads the current URL. | Automation → Google Chrome |
+| Apple Events (Chrome's scripting interface) | Lists, switches, opens and closes tabs. Back, forward, reload. Reads the current URL. | Automation → Google Chrome |
 | Keystrokes | Passes on a Chrome shortcut that you press while the ⌘T palette is open. | Accessibility |
 | Files | Reads `Bookmarks`, `AccountBookmarks`, `Preferences` and `Local State`. Copies `History` and `Favicons` to temporary files to read them, then deletes the copies. | None (your own files) |
 
@@ -179,7 +179,9 @@ and press the new keys. A shortcut must include ⌘, ⌃ or ⌥. Press Esc to ca
 Each Chrome profile has its own favorites grid, with up to 12 favorites. To add a
 favorite, drag a tab onto the grid, or use the tab's context menu. To reorder the
 favorites, drag a favorite onto another one. To reorder tabs, drag a tab onto
-another tab; the order changes in Chrome too. Open bookmark folders stay open for
+another tab. The new order is the sidebar's own, as in Arc: Chrome's tab strip
+keeps its order, because Chrome's "move tab" command replaces the moved tab with
+a blank tab. Open bookmark folders stay open for
 each space.
 
 Favorites work like pinned tabs, as in Arc. Each favorite owns one tab: the tab
@@ -286,6 +288,12 @@ window on the current screen and Space. It does not attach to full-screen window
 
 **macOS asks for Accessibility after every rebuild.** The app has an ad-hoc
 signature. Create the certificate in step 2 and build again.
+
+**The sidebar shows the wrong tabs.** A test tool, such as chrome-devtools-mcp,
+can start a second Google Chrome. Sidebar sends its Apple Events to one Chrome
+process only, and skips a Chrome that was started with automation flags
+(`--remote-debugging-pipe`, `--remote-debugging-port`, `--user-data-dir`,
+`--enable-automation`, `--headless`).
 
 **Tabs do not show.** Allow Sidebar to control Chrome in System Settings →
 Privacy & Security → Automation.

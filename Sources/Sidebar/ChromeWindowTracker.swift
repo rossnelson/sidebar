@@ -57,9 +57,7 @@ final class ChromeWindowTracker {
 
   /// Re-reads Chrome's state and reports it.
   func update() {
-    guard let chrome = NSRunningApplication
-      .runningApplications(withBundleIdentifier: ChromeScripts.bundleID).first
-    else {
+    guard let chrome = ChromeProcess.current() else {
       detach()
       return onChange(nil)
     }
