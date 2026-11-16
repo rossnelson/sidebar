@@ -8,8 +8,6 @@ private let layoutLog = Logger(subsystem: "com.ross.sidebar", category: "layout"
 final class AppDelegate: NSObject, NSApplicationDelegate {
   /// The width kept free left of Chrome for the sidebar and its gaps.
   static let sidebarWidth: CGFloat = 262
-  /// The width kept free while collapsed: a thin strip to hover for the peek.
-  static let margin: CGFloat = 8
   /// The space between the screen edge and the sidebar.
   static let leftGap: CGFloat = 3
   /// The space between the sidebar and Chrome.
@@ -203,7 +201,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? NSScreen.main
     let visible = screen?.visibleFrame ?? window.frame
-    let width = model.isCollapsed ? Self.margin : Self.sidebarWidth
+    // Collapsed, the sidebar hides and Chrome takes the full width.
+    let width = model.isCollapsed ? 0 : Self.sidebarWidth
     // Chrome fills the screen right of the sidebar; no border around it.
     let layout = FrameLayout.compute(window: window.frame, screen: visible, sidebarWidth: width, margin: 0)
     // Correct the window once per move by the person; never chase Chrome's settling.
@@ -212,11 +211,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     {
       moveChrome(to: moved)
     }
-    let sidebar = model.isCollapsed
-      ? FrameLayout.sidebar(beside: layout.hole, reserved: width, leftGap: 0, rightGap: 2)
-      : FrameLayout.sidebar(beside: layout.hole, reserved: width, leftGap: Self.leftGap, rightGap: Self.rightGap)
-    place(sidebar)
     holeRect = layout.hole
+    if model.isCollapsed {
+      // Hidden while collapsed, except during the slide (moveTask).
+      if moveTask == nil { panel.orderOut(nil) }
+      return
+    }
+    place(FrameLayout.sidebar(beside: layout.hole, reserved: width, leftGap: Self.leftGap, rightGap: Self.rightGap))
     updateMousePassThrough()
     // Sit directly above Chrome's window. The two do not overlap, so window
     // pickers (screenshots, screen recording) still choose Chrome over its area.
@@ -407,7 +408,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hidePeek(animated: false)
     model.isCollapsed.toggle()
     guard let window = chromeWindow else { return }
-    let delta = Self.sidebarWidth - Self.margin
+    if !model.isCollapsed { panel.order(.above, relativeTo: window.windowNumber) }
+    let delta = Self.sidebarWidth
     var frame = window.frame
     frame.origin.x += model.isCollapsed ? -delta : delta
     frame.size.width += model.isCollapsed ? delta : -delta
@@ -433,6 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onStep: onStep)
       guard !Task.isCancelled else { return }
       settleUntil = .distantPast
+      moveTask = nil
       tracker.update()
     }
   }
@@ -451,7 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       peekHideTimer = timer
       return
     }
-    guard model.isCollapsed, let frameRect, !model.isPeeking else { return }
+    guard model.isCollapsed, let frameRect = chromeWindow?.frame, !model.isPeeking else { return }
     model.isPeeking = true
     peekGeneration += 1
     // The same place and size as the open sidebar, over Chrome's left edge.

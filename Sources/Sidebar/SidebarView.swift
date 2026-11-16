@@ -18,14 +18,7 @@ struct FrameView: View {
 
       // The panel's width, not `isCollapsed`: while it slides, the panel keeps
       // its content.
-      if model.frameHole.minX < 40 {
-        // The left strip: hovering it slides the sidebar out over Chrome.
-        Color.clear
-          .frame(width: max(model.frameHole.minX, 0))
-          .frame(maxHeight: .infinity)
-          .contentShape(Rectangle())
-          .onHover { if $0 { model.setPeeking(true) } }
-      } else {
+      if model.frameHole.minX >= 40 {
         SidebarView(model: model)
           .frame(width: max(model.frameHole.minX, 0))
           .frame(maxHeight: .infinity, alignment: .top)

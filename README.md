@@ -164,7 +164,7 @@ These shortcuts work only while Chrome is the front app, so other apps keep thei
 | --- | --- |
 | ⌘T | Open the palette: search tabs, bookmarks and history, or type a URL or search |
 | ⇧⌘C | Copy the current tab's URL. You can change this shortcut in Settings. |
-| ⌃⌘S | Collapse or expand the sidebar. When collapsed, a thin edge stays visible; move the pointer over it to peek. |
+| ⌃⌘S | Hide or show the sidebar. While it is hidden, Chrome takes the full width, and ⌘T and Copy URL still work. |
 
 In the palette, Chrome's own ⌘ shortcuts still work. The palette closes and
 sends the key to Chrome.
@@ -237,7 +237,7 @@ one in the ⌘T palette (it shows **Archived**) to open it again.
 ## Keyboard
 
 Press ⌃⌘↓ while Chrome is in front. The sidebar takes the keyboard and selects the
-active tab (while collapsed, the sidebar slides out first).
+active tab (while the sidebar is hidden, it slides out over Chrome first).
 
 - ↑ and ↓ (or ⌃P and ⌃N, or K and J) move the selection.
 - Return opens the selected tab and gives the keyboard back to Chrome.
