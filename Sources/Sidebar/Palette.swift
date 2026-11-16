@@ -7,9 +7,17 @@ import SwiftUI
 @Observable
 final class PaletteState {
   var query = "" {
-    didSet { selection = 0 }
+    didSet {
+      selectedByPointer = false
+      selection = 0
+    }
   }
   var selection = 0
+  /// The pointer made the last selection, so the list must not scroll to it:
+  /// a scroll would put another row under the pointer and select that one.
+  @ObservationIgnored var selectedByPointer = false
+  /// Where the pointer was at the last hover selection, in screen points.
+  @ObservationIgnored var lastPointer: CGPoint?
   var tabs: [WindowTab] = []
   var history: [HistoryItem] = []
   var bookmarks: [BookmarkNode] = []
@@ -30,7 +38,21 @@ final class PaletteState {
   func move(_ delta: Int) {
     let count = results.count
     guard count > 0 else { return }
+    selectedByPointer = false
     selection = (selection + delta + count) % count
+  }
+
+  /// Selects the row under the pointer, but only when the pointer itself
+  /// moved. Rows that slide under a still pointer, during a scroll or a list
+  /// change, do not take the selection.
+  func hover(_ index: Int) {
+    let pointer = NSEvent.mouseLocation
+    defer { lastPointer = pointer }
+    guard let lastPointer, hypot(pointer.x - lastPointer.x, pointer.y - lastPointer.y) >= 1,
+      selection != index
+    else { return }
+    selectedByPointer = true
+    selection = index
   }
 }
 
@@ -71,6 +93,8 @@ final class PaletteController: NSObject, NSWindowDelegate {
     state.closed = model.recentlyClosed
     state.theme = model.theme
     state.query = ""
+    state.selectedByPointer = false
+    state.lastPointer = nil
     state.selection = 0
 
     let panel = self.panel ?? makePanel()
@@ -298,7 +322,7 @@ struct PaletteView: View {
                 .onTapGesture { onOpen(result) }
                 // Only a moving pointer selects; rows scrolling under a still one do not.
                 .onContinuousHover { phase in
-                  if case .active = phase, state.selection != index { state.selection = index }
+                  if case .active = phase { state.hover(index) }
                 }
                 .cascadeIn(delay: Motion.stagger(index, step: 0.018, cap: 10), distance: 5)
             }
@@ -308,7 +332,9 @@ struct PaletteView: View {
         }
         .scrollIndicators(.never)
         .onChange(of: state.selection) { _, selection in
-          if results.indices.contains(selection) { proxy.scrollTo(results[selection].id) }
+          // Follow the keyboard only; see `selectedByPointer`.
+          guard !state.selectedByPointer, results.indices.contains(selection) else { return }
+          proxy.scrollTo(results[selection].id)
         }
       }
 
